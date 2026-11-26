@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
 import http from '@/services/http'
 import { buildRateCodeDailyPrices, resolveRateCodePrice } from '@/utils/rate-code-pricing'
+import { rateCodeAllowsNightEdit, nightRateLockMessage } from '@/utils/rate-code-night-edit'
 import {
   allocationCandidateRooms,
   countAllocatableRooms,
@@ -1248,6 +1249,23 @@ function isServiceRateEditable(serviceDate) {
 function isServiceDisplayEditable(service) {
   if (service?.is_child_breakfast && service?.from_bill) return false
   return !isMoveHistoryBillReference(service) && isServiceRateEditable(service?.service_date)
+}
+
+// Dòng 533/535: mã giá theo ngày / không cho đổi giá thì khóa sửa giá từng đêm của tiền phòng.
+function nightRateLockedByRateCode(room, svc) {
+  if (!isRoomChargeService(svc) || isChildBreakfastService(svc)) return false
+  const code = String(room?.rateCode || '').trim()
+  if (!code || code === 'Vui lòng chọn giá phòng') return false
+  const rateCode = roomRateCodes.value.find(rc => String(rc.Ma || '').trim() === code)
+  return !rateCodeAllowsNightEdit(rateCode)
+}
+
+function isNightRateEditable(room, svc) {
+  return isServiceDisplayEditable(svc) && !nightRateLockedByRateCode(room, svc)
+}
+
+function nightRateLockTitle(room, svc) {
+  return nightRateLockedByRateCode(room, svc) ? nightRateLockMessage(String(room.rateCode).trim()) : ''
 }
 
 function handleServiceRateChange(room, svc, newRate) {
@@ -8431,7 +8449,7 @@ defineExpose({
                                   <td class="p-2 border-slate-100 text-center relative">
                                     <template v-if="isRoomChargeService(svc) && !isChildBreakfastService(svc)">
                                       <div 
-                                        v-if="isEditing && isServiceDisplayEditable(svc)"
+                                        v-if="isEditing && isNightRateEditable(room, svc)"
                                         @click.stop="toggleServiceDiscountPopover(room, svc)"
                                         class="border border-slate-300 rounded px-1.5 py-0.5 text-slate-700 shadow-2xs text-[11px] flex items-center justify-between cursor-pointer bg-white mx-auto max-w-[95px] select-none hover:border-sky-400"
                                         :title="getServiceDiscountLabel(room, svc)"
@@ -8530,7 +8548,7 @@ defineExpose({
                                   <td class="p-2 border-slate-100 text-center text-[#000000D9] font-normal text-xs">{{ svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1 }}</td>
                                   <td class="p-2 border-slate-100 text-right">
                                     <input 
-                                      v-if="isEditing && isServiceDisplayEditable(svc)"
+                                      v-if="isEditing && isNightRateEditable(room, svc)"
                                       type="text"
                                       :value="formatCurrencyInput(svc.rate)"
                                       @input="e => { formatCurrencyLive(e); if (!isChildBreakfastDetailRow(svc)) handleServiceRateChange(room, svc, cleanCurrencyValue(e.target.value)) }"
@@ -8539,7 +8557,7 @@ defineExpose({
                                       @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
                                       class="w-full text-right font-normal text-[#000000D9] bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
                                     />
-                                    <span v-else class="font-normal text-[#000000D9] text-xs">
+                                    <span v-else class="font-normal text-[#000000D9] text-xs" :title="nightRateLockTitle(room, svc)" data-testid="night-rate-locked">
                                       {{ (Number(svc.rate) || 0).toLocaleString('en-US') }}
                                     </span>
                                   </td>
@@ -9110,7 +9128,7 @@ defineExpose({
                                          <td class="p-2 border-slate-100 text-center relative">
                                            <template v-if="isRoomChargeService(svc) && !isChildBreakfastService(svc)">
                                              <div 
-                                               v-if="isServiceDisplayEditable(svc)"
+                                               v-if="isNightRateEditable(room, svc)"
                                                @click.stop="toggleServiceDiscountPopover(room, svc)"
                                                class="border border-slate-300 rounded px-1.5 py-0.5 text-slate-700 shadow-2xs text-[11px] flex items-center justify-between cursor-pointer bg-white mx-auto max-w-[95px] select-none hover:border-sky-400"
                                                :title="getServiceDiscountLabel(room, svc)"
@@ -9219,7 +9237,7 @@ defineExpose({
                                         </td>
                                         <td class="p-2 border-slate-100 text-right">
                                           <input 
-                                            v-if="isServiceDisplayEditable(svc)"
+                                            v-if="isNightRateEditable(room, svc)"
                                             type="text"
                                             :value="formatCurrencyInput(svc.rate)"
                                             @input="formatCurrencyLive"
@@ -9228,7 +9246,7 @@ defineExpose({
                                             @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
                                             class="w-full text-right font-normal text-[#000000D9] bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
                                           />
-                                          <span v-else class="font-normal text-[#000000D9] text-xs">
+                                          <span v-else class="font-normal text-[#000000D9] text-xs" :title="nightRateLockTitle(room, svc)" data-testid="night-rate-locked">
                                             {{ (Number(svc.rate) || 0).toLocaleString('en-US') }}
                                           </span>
                                         </td>

@@ -6621,6 +6621,8 @@
  "Chỉ charge được từng phòng một, vui lòng chỉ chọn 1 phòng.": "Only one room can be charged at a time, please select just 1 room.",
  "Không tải được danh sách phòng noshow.": "Could not load the noshow room list.",
  "Phòng có ngày đến bằng ngày đi (0 đêm) không thể Noshow one day, vì ngày đến mới sẽ lớn hơn ngày đi. Vui lòng dùng Noshow (by stage).": "A room whose arrival date equals its departure date (0 nights) cannot be No Show One Day, because the new arrival date would be later than the departure date. Please use Noshow (by stage).",
- "Phòng thuê không ở trạng thái Noshow, không thể thực hiện charge tiền.": "The room is not in Noshow status, so it cannot be charged."
+ "Phòng thuê không ở trạng thái Noshow, không thể thực hiện charge tiền.": "The room is not in Noshow status, so it cannot be charged.",
+ "Mã giá ${rateCodeMa} không cho phép sửa giá từng đêm, giá lấy theo bảng giá của mã giá.": "Rate code ${rateCodeMa} does not allow changing nightly rates; rates follow the rate code price table.",
+ "Không thể xóa vì {label} đã phát sinh dữ liệu": "Cannot delete because {label} already has transaction data"
 }
 
