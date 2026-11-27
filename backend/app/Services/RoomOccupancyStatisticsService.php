@@ -59,9 +59,10 @@ class RoomOccupancyStatisticsService
         $ooo = $oooRoomNumbers->count();
         $oos = $oosRoomNumbers->count();
 
-        // Phòng có thể bán loại cả OOO/OOS; riêng mẫu số công suất theo yêu cầu chỉ loại OOO.
-        $saleableRooms = max(0, $totalRooms - $ooo - $oos);
-        $occupancyBaseRooms = max(0, $totalRooms - $ooo);
+        // Phòng có thể bán = tổng phòng - OOO (không trừ OOS), như legacy sp_136 "Room available for sale"
+        // và popup Thống kê hệ thống cũ (131 - OOO 2 = 129). Cũng là mẫu số công suất.
+        $saleableRooms = max(0, $totalRooms - $ooo);
+        $occupancyBaseRooms = $saleableRooms;
 
         $availabilityQuery = fn () => BookingRoom::query()
             ->stayOnly()
@@ -102,7 +103,12 @@ class RoomOccupancyStatisticsService
                     });
                 });
         $projected = $this->summarize($projectedQuery(), true);
-        $forecastBreakdown = $this->forecastBreakdown($projectedQuery(), $occupancyBaseRooms);
+        // Tiền từ rpt_room_forecast (nếu có) ghi đè số tạm tính từ giá phòng.
+        $forecastBreakdown = array_merge(
+            $this->forecastBreakdown($projectedQuery(), $occupancyBaseRooms),
+            $this->guestTypeBreakdown($forecastQuery(), $dateString),
+            $this->forecastMoney($date, $saleableRooms)
+        );
 
         // Xem tương lai (note 30/10): chưa có check-in thực tế ở ngày đó, nên "đang ở" là phòng đã ở từ trước
         // và còn ở qua ngày xem (đặt trước hoặc đang ở hiện tại); phòng đến trong ngày xem thuộc "Đến",
@@ -295,8 +301,6 @@ class RoomOccupancyStatisticsService
      * Dự báo cuối ngày tách theo mã giá, tính trên cùng tập phòng dự kiến cuối ngày với "Phòng ở"
      * (trước đây giao diện tự tính từ ô phòng nên lệch với tổng).
      * - COMP: giá 0đ và gán mã giá FOC.  - HU: mã giá HU / House Use.  - Nội bộ: mã giá nội bộ / internal.
-     * - Khách đoàn: phòng dùng mã giá có cờ Khách đoàn (room_rate_codes.IsGIT) như legacy vw_009/SP1323;
-     *   còn lại (kể cả không có mã giá) là khách lẻ. Không dùng bookings.is_git (= tiền phòng gửi Master, dòng 19).
      */
     private function forecastBreakdown($query, int $occupancyBaseRooms): array
     {
@@ -316,17 +320,8 @@ class RoomOccupancyStatisticsService
         $internal = $rows->filter(fn ($room) => !$isComp($room) && !$isHu($room) && $isInternal($room));
         $chargeable = $rows->reject(fn ($room) => $isComp($room) || $isHu($room) || $isInternal($room));
         $revenue = (float) $chargeable->sum(fn ($room) => (float) $room->rate);
-        $gitCodes = \Illuminate\Support\Facades\Schema::hasColumn('room_rate_codes', 'IsGIT')
-            ? \App\Models\RoomRateCode::where('IsGIT', true)->pluck('Ma')->map(fn ($ma) => strtoupper(trim((string) $ma)))->all()
-            : [];
-        $group = $rows->filter(fn ($room) => in_array($code($room), $gitCodes, true));
-        $retail = $rows->reject(fn ($room) => in_array($code($room), $gitCodes, true));
 
         return [
-            'forecast_group_rooms' => $group->count(),
-            'forecast_group_pax' => $pax($group),
-            'forecast_retail_rooms' => $retail->count(),
-            'forecast_retail_pax' => $pax($retail),
             'forecast_chargeable_rooms' => $chargeable->count(),
             'forecast_chargeable_pax' => $pax($chargeable),
             'forecast_chargeable_rate' => $rate($chargeable->count()),
@@ -342,6 +337,71 @@ class RoomOccupancyStatisticsService
             'forecast_revenue' => round($revenue),
             'forecast_average_rate' => $chargeable->count() > 0 ? round($revenue / $chargeable->count()) : 0,
         ];
+    }
+
+    /**
+     * Khách lẻ / Khách đoàn (popup Thống kê) như hệ thống web cũ: tính trên các phòng có khách trong ngày
+     * (đang ở, kể cả phòng chưa trả, + phòng đến) — tổng = Đang ở + Phòng đến, không phải "Phòng ở" cuối ngày.
+     * Khách đoàn = booking bật công tắc GIT ("Tiền phòng gửi Master" = bookings.is_master_room_rate);
+     * dòng 19: GIT chính là tiền phòng gửi Master. Không dùng bookings.is_git (luôn = 1).
+     */
+    private function guestTypeBreakdown($query, string $dateString): array
+    {
+        $rows = $query
+            ->whereIn('status', [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN])
+            ->whereDate('arrival_date', '<=', $dateString)
+            ->whereDate('departure_date', '>=', $dateString)
+            ->get(['id', 'booking_id', 'room_number', 'adults', 'children_qty', 'babies'])
+            // Đếm theo từng lượt ở như hệ thống cũ (lẻ + đoàn = Đang ở + Phòng đến): một phòng vừa đi vừa đến
+            // trong ngày là 2 lượt.
+            ->unique('id')
+            ->values();
+        $gitBookings = \App\Models\Booking::whereIn('id', $rows->pluck('booking_id')->unique()->all())
+            ->pluck('is_master_room_rate', 'id');
+        $isGroup = fn ($room) => (bool) ($gitBookings[$room->booking_id] ?? false);
+        $pax = fn ($list) => (int) $list->sum(fn ($room) => (int) $room->adults + (int) $room->children_qty + (int) $room->babies);
+        $group = $rows->filter($isGroup);
+        $retail = $rows->reject($isGroup);
+
+        return [
+            'forecast_group_rooms' => $group->count(),
+            'forecast_group_pax' => $pax($group),
+            'forecast_retail_rooms' => $retail->count(),
+            'forecast_retail_pax' => $pax($retail),
+        ];
+    }
+
+    /**
+     * Tiền dự báo của ngày (popup Thống kê): dùng chung thủ tục rpt_room_forecast (port legacy sp_023/sp_136,
+     * cùng nguồn Báo cáo dự đoán bán phòng và Dashboard) để lấy tiền phòng thực tế từng đêm (bill đã post,
+     * giá theo đêm, RMDay, ER) thay vì cộng giá gốc booking_rooms.rate. Không chạy được (SQLite test) thì giữ
+     * số tính từ giá phòng trong forecastBreakdown.
+     */
+    private function forecastMoney(Carbon $date, int $saleableRooms): array
+    {
+        try {
+            if (\Illuminate\Support\Facades\DB::connection()->getDriverName() !== 'mysql') {
+                return [];
+            }
+            $day = $date->toDateString();
+            $row = collect(\Illuminate\Support\Facades\DB::select('CALL rpt_room_forecast(?, ?, ?, ?, ?, ?, ?, ?)', [$day, $day, '', '', '', 0, 1, '']))->first();
+            if (!$row) {
+                return [];
+            }
+            $row = (array) $row;
+            $revenue = (float) ($row['Revenue'] ?? 0);
+
+            return [
+                'forecast_revenue' => round($revenue),
+                'forecast_average_rate' => round((float) ($row['AvgRate'] ?? 0)),
+                'forecast_revpar' => $saleableRooms > 0 ? round($revenue / $saleableRooms) : 0,
+                'forecast_money_source' => 'rpt_room_forecast',
+            ];
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Room map forecast money: '.$e->getMessage());
+
+            return [];
+        }
     }
 
     private function lockedRoomNumbers($physicalRoomNumbers, Carbon $date, string $lockType)

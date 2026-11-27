@@ -524,6 +524,11 @@ const occupancyRateStats = computed(() => {
   return currentDateStats.value?.occupancy_rate !== undefined ? `${formatOccupancyRate(currentOccupancyRate.value)}%` : '-'
 })
 
+function forecastRowPercent(rooms) {
+  const base = Number(roomMapStatistics.value?.occupancyBaseRooms) || 0
+  return base > 0 ? formatOccupancyRate((Number(rooms) || 0) / base * 100) : formatOccupancyRate(0)
+}
+
 function formatOccupancyRate(value) {
   return (Number(value) || 0).toFixed(2)
 }
@@ -581,7 +586,7 @@ const roomMapStatistics = computed(() => {
     sameDayBookings: apiStat('same_day_reservations'),
     sameDayPax: apiStat('same_day_reservations_pax'),
     walkInRooms: apiStat('walk_in_rooms'),
-    // Khách đoàn / lẻ theo cờ Khách đoàn (GIT) của mã giá phòng (legacy SP1323.IsGIT), tính ở API.
+    // Khách đoàn / lẻ theo công tắc GIT của booking (Tiền phòng gửi Master), trên phòng đang ở + đến; tính ở API.
     retailRooms: apiStat('forecast_retail_rooms', retailRooms.length),
     retailPax: apiStat('forecast_retail_pax', occupiedPax(retailRooms)),
     groupRooms: apiStat('forecast_group_rooms', groupRooms.length),
@@ -603,9 +608,12 @@ const roomMapStatistics = computed(() => {
     endOfDayPax: apiStat('occupied_projected_pax', occupiedPax(endOfDayStay)),
     vacantRooms: apiStat('vacant_projected', Math.max(0, saleable.length - endOfDayStay.length)),
     occupancyRate: apiStat('occupancy_rate'),
+    // Note 23/11: % của từng dòng Dự báo cuối ngày = Room của dòng / phòng làm mẫu số công suất (tổng - OOO).
+    occupancyBaseRooms: apiStat('occupancy_base_rooms', saleable.length),
     projectedRevenue: apiStat('forecast_revenue', projectedRevenue),
     averageRate: apiStat('forecast_average_rate', chargeableRooms.length ? Math.round(projectedRevenue / chargeableRooms.length) : 0),
-    revenuePerSaleableRoom: apiStat('saleable_rooms', saleable.length) ? Math.round(apiStat('forecast_revenue', projectedRevenue) / apiStat('saleable_rooms', saleable.length)) : 0,
+    // Tiền dự báo lấy từ rpt_room_forecast qua API (cùng Báo cáo dự đoán bán phòng / Dashboard).
+    revenuePerSaleableRoom: apiStat('forecast_revpar', apiStat('saleable_rooms', saleable.length) ? Math.round(apiStat('forecast_revenue', projectedRevenue) / apiStat('saleable_rooms', saleable.length)) : 0),
   }
 })
 
@@ -5283,49 +5291,49 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       <td class="font-normal text-[#000000D9] border-slate-200">Khách lẻ</td>
                       <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.retailRooms }}</td>
                       <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.retailPax }}</td>
-                      <td class="text-center font-normal text-slate-400 border-slate-200">-</td>
+                      <td class="text-center font-normal text-slate-400 border-slate-200">{{ forecastRowPercent(roomMapStatistics.retailRooms) }}%</td>
                     </tr>
                     <tr class="h-7">
                       <td class="font-normal text-[#000000D9] border-slate-200">Khách đoàn</td>
                       <td class="text-center font-normal text-[#000000D9] tabular-nums border-slate-200">{{ roomMapStatistics.groupRooms }}</td>
                       <td class="text-center font-normal text-[#000000D9] tabular-nums border-slate-200">{{ roomMapStatistics.groupPax }}</td>
-                      <td class="text-center font-normal text-slate-400 border-slate-200">-</td>
+                      <td class="text-center font-normal text-slate-400 border-slate-200">{{ forecastRowPercent(roomMapStatistics.groupRooms) }}%</td>
                     </tr>
                     <tr class="h-7">
                       <td class="font-normal text-[#000000D9] border-slate-200">Phòng ở (ko b/g COMP.HU)</td>
                       <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.chargeableRooms }}</td>
                       <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.chargeablePax }}</td>
-                      <td class="text-center font-normal text-sky-600 tabular-nums border-slate-200">{{ formatOccupancyRate(roomMapStatistics.chargeableRate) }}%</td>
+                      <td class="text-center font-normal text-sky-600 tabular-nums border-slate-200">{{ forecastRowPercent(roomMapStatistics.chargeableRooms) }}%</td>
                     </tr>
                     <tr class="h-7">
                       <td class="font-normal text-[#000000D9] border-slate-200">Phòng COMP</td>
                       <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.compRooms }}</td>
                       <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.compPax }}</td>
-                      <td class="text-center font-normal text-slate-400 border-slate-200">-</td>
+                      <td class="text-center font-normal text-slate-400 border-slate-200">{{ forecastRowPercent(roomMapStatistics.compRooms) }}%</td>
                     </tr>
                     <tr class="h-7">
                       <td class="font-normal text-[#000000D9] border-slate-200">Phòng ở (ko b/g HU)</td>
                       <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.withoutHuRooms }}</td>
                       <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.withoutHuPax }}</td>
-                      <td class="text-center font-normal text-sky-600 tabular-nums border-slate-200">{{ formatOccupancyRate(roomMapStatistics.withoutHuRate) }}%</td>
+                      <td class="text-center font-normal text-sky-600 tabular-nums border-slate-200">{{ forecastRowPercent(roomMapStatistics.withoutHuRooms) }}%</td>
                     </tr>
                     <tr class="h-7">
                       <td class="font-normal text-[#000000D9] border-slate-200">Phòng nội bộ</td>
                       <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.internalRooms }}</td>
                       <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.internalPax }}</td>
-                      <td class="text-center font-normal text-slate-400 border-slate-200">-</td>
+                      <td class="text-center font-normal text-slate-400 border-slate-200">{{ forecastRowPercent(roomMapStatistics.internalRooms) }}%</td>
                     </tr>
                     <tr class="h-7">
                       <td class="font-normal text-blue-700 border-slate-200">Phòng ở</td>
                       <td class="text-center font-normal text-blue-700 tabular-nums border-slate-200">{{ roomMapStatistics.endOfDayRooms }}</td>
                       <td class="text-center font-normal text-blue-700 tabular-nums border-slate-200">{{ roomMapStatistics.endOfDayPax }}</td>
-                      <td class="text-center font-normal text-blue-700 tabular-nums border-slate-200">{{ formatOccupancyRate(roomMapStatistics.occupancyRate) }}%</td>
+                      <td class="text-center font-normal text-blue-700 tabular-nums border-slate-200">{{ forecastRowPercent(roomMapStatistics.endOfDayRooms) }}%</td>
                     </tr>
                     <tr class="h-7">
                       <td class="font-normal text-red-500 border-slate-200">Phòng trống</td>
                       <td class="text-center font-normal text-red-500 tabular-nums border-slate-200">{{ roomMapStatistics.vacantRooms }}</td>
                       <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">-</td>
-                      <td class="text-center font-normal text-slate-400 border-slate-200">-</td>
+                      <td class="text-center font-normal text-slate-400 border-slate-200">{{ forecastRowPercent(roomMapStatistics.vacantRooms) }}%</td>
                     </tr>
                   </tbody>
                 </table>

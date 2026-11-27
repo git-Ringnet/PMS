@@ -1,6 +1,6 @@
 {
- "generated_at": "2026-11-26T17:28:30.627Z",
- "count": 6275,
+ "generated_at": "2026-11-27T03:05:14.805Z",
+ "count": 6273,
  "items": [
   {
    "source": "- Bảo mật nâng cao",
@@ -29225,16 +29225,6 @@
    ]
   },
   {
-   "source": "Khách Đoàn (GIT)",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › RateSetup",
-     "route": "/config"
-    }
-   ]
-  },
-  {
    "source": "Khách hàng",
    "is_pattern": false,
    "locations": [
@@ -48553,16 +48543,6 @@
     {
      "area": "Đặt phòng › RoomMapPage",
      "route": "/reservation"
-    }
-   ]
-  },
-  {
-   "source": "Phòng dùng mã giá này được tính là Khách đoàn ở thống kê Room map",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › RateSetup",
-     "route": "/config"
     }
    ]
   },

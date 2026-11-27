@@ -387,13 +387,14 @@ class RoomOccupancyStatisticsTest extends TestCase
         $response->assertJsonPath('data.total_rooms', 6)
             ->assertJsonPath('data.ooo', 1)
             ->assertJsonPath('data.oos', 1)
-            ->assertJsonPath('data.saleable_rooms', 4)
+            // Phòng có thể bán = tổng - OOO, không trừ OOS (legacy sp_136 / popup hệ thống cũ).
+            ->assertJsonPath('data.saleable_rooms', 5)
             ->assertJsonPath('data.occupancy_base_rooms', 5)
             ->assertJsonPath('data.occupied_current', 1)
             ->assertJsonPath('data.occupied_current_pax', 1)
             ->assertJsonPath('data.occupied_projected', 3)
             ->assertJsonPath('data.occupied_projected_pax', 4)
-            ->assertJsonPath('data.vacant_projected', 1)
+            ->assertJsonPath('data.vacant_projected', 2)
             ->assertJsonPath('data.occupancy_rate', 60)
             ->assertJsonPath('data.arrivals_checked_in', 2)
             ->assertJsonPath('data.arrivals_checked_in_pax', 2)
@@ -731,16 +732,26 @@ class RoomOccupancyStatisticsTest extends TestCase
         );
         $this->assertSame(900000.0, (float) $stats['forecast_revenue']);
 
-        // Khách đoàn theo cờ GIT của mã giá (không theo bookings.is_git = tiền phòng gửi Master).
+        // Khách đoàn / lẻ theo công tắc GIT của booking (is_master_room_rate, mặc định bật theo dòng 19),
+        // trên phòng có khách trong ngày (đang ở + đến): 5 phòng đều thuộc booking bật GIT.
+        $this->assertSame(5, $stats['forecast_group_rooms']);
+        $this->assertSame(0, $stats['forecast_retail_rooms']);
+        $booking->forceFill(['is_master_room_rate' => false])->save();
+        $stats = app(\App\Services\RoomOccupancyStatisticsService::class)->calculate(\Carbon\Carbon::parse('2026-08-10'));
         $this->assertSame(0, $stats['forecast_group_rooms']);
         $this->assertSame(5, $stats['forecast_retail_rooms']);
-        $booking->forceFill(['is_git' => true])->save();
-        \App\Models\RoomRateCode::create(['Ma' => 'BAR', 'IsGIT' => false]);
-        \App\Models\RoomRateCode::create(['Ma' => 'HU', 'IsGIT' => true]);
+        $this->assertSame(11, $stats['forecast_retail_pax']);   // 4 phòng x 2 khách + day use 3 khách
+
+        // Phòng có thể bán = tổng - OOO, không trừ OOS (legacy sp_136, popup hệ thống cũ).
+        Room::create(['room_number' => '106', 'room_form_id' => $form->id, 'room_class_id' => $active->id, 'floor' => 1, 'room_status_code' => 'vacant_ready']);
+        \App\Models\RoomLock::create([
+            'room_number' => '106', 'lock_type' => 'OOS', 'start_date' => '2026-08-01', 'end_date' => '2026-08-30',
+            'is_active' => 1, 'status' => 'Active', 'reason' => 'test',
+        ]);
         $stats = app(\App\Services\RoomOccupancyStatisticsService::class)->calculate(\Carbon\Carbon::parse('2026-08-10'));
-        $this->assertSame(1, $stats['forecast_group_rooms']);    // 104 dùng mã HU được tick GIT
-        $this->assertSame(2, $stats['forecast_group_pax']);
-        $this->assertSame(4, $stats['forecast_retail_rooms']);
-        $this->assertSame($stats['occupied_projected'], $stats['forecast_group_rooms'] + $stats['forecast_retail_rooms']);
+        $this->assertSame(6, $stats['total_rooms']);
+        $this->assertSame(1, $stats['oos']);
+        $this->assertSame(6, $stats['saleable_rooms']);
+        $this->assertSame(1, $stats['vacant_projected']);
     }
 }
