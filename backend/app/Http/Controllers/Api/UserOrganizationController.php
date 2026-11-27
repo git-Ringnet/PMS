@@ -96,6 +96,10 @@ class UserOrganizationController extends Controller
             ]);
         }
 
+        $assignmentKey = fn ($item) => $item['system_branch_id'] . '|' . $item['application_code'];
+        $beforeAssignments = UserBranchPosition::query()->where('user_id', $user->id)->whereIn('application_code', $applicationCodes)->get()
+            ->mapWithKeys(fn ($item) => [$item->system_branch_id . '|' . $item->application_code => (int) $item->position_id])->all();
+
         DB::connection($system)->transaction(function () use (
             $user, $normalized, $applicationCodes, $accessibleBranchIds, $primaryBranchId
         ) {
@@ -148,6 +152,12 @@ class UserOrganizationController extends Controller
                 'job_title' => $summaryAssignment?->position?->name ?? $user->job_title,
             ]);
         });
+
+        // Checklist TC_HT_06 dòng 33: ghi rõ chi nhánh - ứng dụng - vị trí được thêm / đổi / bỏ của nhân viên.
+        $afterAssignments = $normalized->mapWithKeys(fn ($item) => [$assignmentKey($item) => (int) $item['position_id']])->all();
+        \App\Services\ActivityLogService::record('Modify',
+            \App\Support\SystemLogText::userAssignments((string) ($user->name ?: $user->username), $beforeAssignments, $afterAssignments, $primaryBranchId ? (int) $primaryBranchId : null),
+            ['screen' => \App\Support\SystemLogText::SCREEN_EMPLOYEE, 'target_type' => 'User', 'target_id' => $user->id, 'target_label' => $user->name], $request);
 
         return response()->json(['success' => true, 'message' => 'Đã cập nhật vị trí và chi nhánh của nhân viên.']);
     }

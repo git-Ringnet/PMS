@@ -133,6 +133,23 @@ class ActivityLogFormatter
         'no_post' => 'Chặn ghi nợ (No Post)',
         'is_primary' => 'Khách chính',
         'room_status_code' => 'Tình trạng buồng',
+        // Checklist TC_HT_06 dòng 33/36: các trường của màn Hệ thống (phân quyền, cơ cấu tổ chức, nhân viên)
+        'system_branch_id' => 'Chi nhánh',
+        'primary_branch_id' => 'Chi nhánh chính',
+        'role_id' => 'Vai trò',
+        'permission_id' => 'Quyền',
+        'organization_department_id' => 'Bộ phận',
+        'position_id' => 'Vị trí công việc',
+        'application_code' => 'Ứng dụng',
+        'allow_historical_date_actions' => 'Cho thao tác ngày cũ',
+        'must_change_password' => 'Bắt đổi mật khẩu',
+        'level' => 'Cấp',
+        'department_scope' => 'Phạm vi bộ phận',
+        'screen_name' => 'Tên màn hình',
+        'screen_code' => 'Mã màn hình',
+        'path' => 'Đường dẫn',
+        'module' => 'Phân hệ',
+        'image' => 'Ảnh',
     ];
 
     /** Trường id danh mục => [bảng, cột tên hiển thị, connection hệ thống?] */
@@ -148,6 +165,13 @@ class ActivityLogFormatter
         'payment_method_id' => ['payment_methods', 'name', false],
         'sales_person_id' => ['users', 'name', true],
         'user_id' => ['users', 'name', true],
+        // Checklist TC_HT_06 dòng 33/36: id của màn Hệ thống hiện theo tên thay vì số
+        'system_branch_id' => ['system_branches', 'name', true],
+        'primary_branch_id' => ['system_branches', 'name', true],
+        'role_id' => ['roles', 'name', true],
+        'permission_id' => ['permissions', 'name', true],
+        'organization_department_id' => ['organization_departments', 'name', true],
+        'position_id' => ['positions', 'name', true],
     ];
 
     private const MONEY_FIELDS = [
@@ -157,7 +181,14 @@ class ActivityLogFormatter
 
     private const BOOLEAN_FIELDS = [
         'is_git', 'breakfast', 'breakfast_included', 'is_day_use', 'is_visible', 'is_active', 'sync_acc',
-        'is_do_not_move', 'no_post', 'is_primary',
+        'is_do_not_move', 'no_post', 'is_primary', 'allow_historical_date_actions', 'must_change_password',
+    ];
+
+    /** Trường kỹ thuật không hiện trong bảng chi tiết thay đổi (dòng 36). */
+    private const TECHNICAL_FIELDS = [
+        'id', 'created_at', 'updated_at', 'deleted_at', 'remember_token', 'password', 'sort_order', 'order_index',
+        'created_by', 'updated_by', 'created_by_user_id', 'updated_by_user_id', 'batch', 'log_batch', 'log_version',
+        'guard_name', 'email_verified_at',
     ];
 
     private static array $nameCache = [];
@@ -283,6 +314,51 @@ class ActivityLogFormatter
         }
 
         return $lines;
+    }
+
+    /**
+     * Checklist TC_HT_06 dòng 36: bảng chi tiết thay đổi dễ đọc cho popup Lịch sử thao tác.
+     * Mỗi dòng {field, label, before, after}; chỉ các trường thực sự thay đổi (thêm mới: chỉ có "sau",
+     * xóa: chỉ có "trước"), bỏ trường kỹ thuật, giá trị đã đổi sang tên / ngày / tiền / có-không.
+     *
+     * @param  array<string,string>  $labels  nhãn ưu tiên (bảng nhãn của màn hình hiển thị)
+     * @return array<int, array{field:string,label:string,before:string,after:string}>
+     */
+    public static function changeRows(?array $old, ?array $new, array $labels = []): array
+    {
+        $old = is_array($old) ? $old : [];
+        $new = is_array($new) ? $new : [];
+        $rows = [];
+        foreach (array_unique(array_merge(array_keys($old), array_keys($new))) as $key) {
+            $key = (string) $key;
+            if (in_array($key, self::TECHNICAL_FIELDS, true) || str_starts_with($key, '_')) {
+                continue;
+            }
+            $hasOld = array_key_exists($key, $old);
+            $hasNew = array_key_exists($key, $new);
+            $before = $hasOld ? self::value($key, $old[$key]) : '';
+            $after = $hasNew ? self::value($key, $new[$key]) : '';
+            if ($hasOld && $hasNew && $before === $after) {
+                continue;
+            }
+            if (($hasOld && !$hasNew && $before === '(trống)') || (!$hasOld && $hasNew && $after === '(trống)')) {
+                continue;
+            }
+            $rows[] = [
+                'field' => $key,
+                'label' => $labels[$key] ?? (self::FIELD_LABELS[$key] ?? self::humanize($key)),
+                'before' => $before,
+                'after' => $after,
+            ];
+        }
+
+        return $rows;
+    }
+
+    /** Nhãn tạm cho trường chưa có trong bảng nhãn: bỏ hậu tố _id, đổi gạch dưới thành khoảng trắng. */
+    private static function humanize(string $key): string
+    {
+        return ucfirst(str_replace('_', ' ', preg_replace('/_id$/', '', $key)));
     }
 
     public static function flushCache(): void

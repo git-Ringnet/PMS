@@ -6,6 +6,7 @@ import {
 } from '@/services/company-service'
 import { useUiStore } from '@/stores/ui-store'
 import { PERMISSION_MODULE_LABELS, splitFrontOfficeModules } from '@/utils/screen-permissions'
+import { moduleAccessState, setModuleAccess } from '@/utils/role-module-access.js'
 
 const uiStore = useUiStore()
 const roles = ref([])
@@ -34,9 +35,10 @@ const screenRows = computed(() => Object.values(screens.value))
 const selectedCount = computed(() => Object.values(groups.value).flat().filter(item => item.granted).length)
 // Dòng 328: phân hệ REPORT gồm quyền xem từng báo cáo trong Danh mục báo cáo
 const MODULE_LABELS = { REPORT: 'REPORT - Xem báo cáo (theo Danh mục báo cáo)', ...PERMISSION_MODULE_LABELS }
-const moduleAllViewGranted = (module) => (groups.value[module] || []).every(item => item.granted)
-function toggleModuleView(module, checked) {
-  (groups.value[module] || []).filter(item => (item.action || 'view') === 'view').forEach(item => { item.granted = checked })
+// Checklist TC_HT_04 dòng 21 / task 473: mọi phân hệ có ô chọn để cho vai trò được vào phân hệ đó.
+const moduleAccess = (module) => moduleAccessState(groups.value[module])
+function toggleModuleAccess(module, checked) {
+  setModuleAccess(groups.value[module], checked)
 }
 
 async function loadBase() {
@@ -149,10 +151,19 @@ async function saveCopy() {
     uiStore.showToast('Vui lòng chọn vai trò cần sao chép.', 'warning')
     return
   }
-  await copyRole(selectedRole.value.id, {
-    ...copyForm.value, system_branch_id: Number(selectedBranchId.value), application_code: applicationCode.value,
-  })
+  // Checklist TC_HT_04 dòng 24: lỗi (mã trùng, quá dài...) phải báo ra, giữ nguyên form để sửa; trước đây màn hình im lặng.
+  let created
+  try {
+    const response = await copyRole(selectedRole.value.id, {
+      ...copyForm.value, system_branch_id: Number(selectedBranchId.value), application_code: applicationCode.value,
+    })
+    created = response.data?.data
+  } catch (error) {
+    uiStore.showToast(error.response?.data?.message || 'Không thể copy phân quyền', 'error')
+    return
+  }
   copyModal.value = false
+  if (created?.id) selectedRole.value = created
   await loadBase()
   uiStore.showToast('Đã copy vai trò và quyền tại chi nhánh đang chọn', 'success')
 }
@@ -296,9 +307,17 @@ async function saveScreen() {
             <span class="font-bold text-slate-800 text-xs uppercase tracking-wide">
               {{ MODULE_LABELS[module] || module }}
             </span>
-            <label v-if="module === 'REPORT'" class="ml-auto flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 cursor-pointer">
-              <input type="checkbox" class="w-3.5 h-3.5 accent-sky-500" :checked="moduleAllViewGranted(module)" @change="toggleModuleView(module, $event.target.checked)" />
-              Cho xem tất cả báo cáo
+            <label class="ml-auto flex items-center gap-1.5 text-xs font-semibold text-[#000000D9] cursor-pointer" :title="module === 'REPORT' ? 'Cho xem tất cả báo cáo' : 'Tích: vai trò được vào phân hệ này (xem tất cả màn hình). Bỏ tích: không được vào phân hệ.'">
+              <input
+                type="checkbox"
+                data-testid="module-access-toggle"
+                class="w-3.5 h-3.5 accent-sky-500"
+                :checked="moduleAccess(module) === 'all'"
+                :indeterminate.prop="moduleAccess(module) === 'some'"
+                @change="toggleModuleAccess(module, $event.target.checked)"
+              />
+              <span v-if="module === 'REPORT'">Cho xem tất cả báo cáo</span>
+              <span v-else>Được truy cập phân hệ</span>
             </label>
           </div>
 

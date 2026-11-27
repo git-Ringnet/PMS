@@ -295,7 +295,7 @@ class ReportDefinitionController extends Controller
         }
 
         $configuredBranchCodes = array_keys(config('database_domains.branch_connections', []));
-        $branches = $user->isSuperAdmin()
+        $branches = $user->hasUnrestrictedBranchAccess()
             ? SystemBranch::query()
                 ->where('is_active', true)
                 ->whereIn('code', $configuredBranchCodes)

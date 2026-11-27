@@ -69,6 +69,11 @@ class BranchRolePermissionController extends Controller
             ->whereIn('screen_code', $selectedPermissions->where('action', '!=', 'view')->pluck('screen_code')->filter())
             ->pluck('id');
         $validIds = $selectedPermissions->pluck('id')->merge($requiredViewIds)->unique();
+        $beforeIds = BranchRolePermission::query()
+            ->where('system_branch_id', $validated['system_branch_id'])
+            ->where('role_id', $role->id)
+            ->whereIn('permission_id', Permission::where('application_code', $applicationCode)->pluck('id'))
+            ->pluck('permission_id');
 
         DB::connection($system)->transaction(function () use ($system, $role, $validated, $validIds, $applicationCode) {
             $applicationPermissionIds = Permission::where('application_code', $applicationCode)->pluck('id');
@@ -86,6 +91,11 @@ class BranchRolePermissionController extends Controller
                 ]);
             }
         });
+
+        // Checklist TC_HT_06 dòng 33: một dòng log tổng hợp quyền cấp thêm / bỏ, ghi bằng tên màn hình.
+        \App\Services\ActivityLogService::record('Modify', \App\Support\SystemLogText::rolePermissionSync(
+            $role, (int) $validated['system_branch_id'], $applicationCode, $beforeIds->map(fn ($id) => (int) $id), $validIds->map(fn ($id) => (int) $id)->values()
+        ), ['screen' => \App\Support\SystemLogText::SCREEN_ROLES, 'target_type' => 'Role', 'target_id' => $role->id, 'target_label' => $role->name], $request);
 
         return response()->json(['success' => true, 'message' => 'Đã lưu phân quyền theo chi nhánh.']);
     }
@@ -143,6 +153,14 @@ class BranchRolePermissionController extends Controller
             'description' => 'nullable|string|max:255',
             'system_branch_id' => ['required', 'integer', \Illuminate\Validation\Rule::exists($system . '.system_branches', 'id')],
             'application_code' => 'nullable|string|max:20',
+        ], [
+            // Checklist TC_HT_04 dòng 24: báo lỗi rõ ràng để màn Copy phân quyền không im lặng.
+            'code.required' => 'Vui lòng nhập Mã quyền mới.',
+            'code.max' => 'Mã quyền mới tối đa 30 ký tự.',
+            'code.unique' => "Mã quyền \"{$request->input('code')}\" đã tồn tại, vui lòng nhập mã khác.",
+            'name.required' => 'Vui lòng nhập Tên quyền mới.',
+            'name.max' => 'Tên quyền mới tối đa 100 ký tự.',
+            'system_branch_id.required' => 'Vui lòng chọn chi nhánh.',
         ]);
 
         $newRole = DB::connection($system)->transaction(function () use ($sourceRole, $validated) {
@@ -173,6 +191,11 @@ class BranchRolePermissionController extends Controller
 
             return $role;
         });
+
+        $copied = BranchRolePermission::where('role_id', $newRole->id)->where('system_branch_id', $validated['system_branch_id'])->count();
+        \App\Services\ActivityLogService::record('Add', \App\Support\SystemLogText::roleCopy(
+            $sourceRole, $newRole, (int) $validated['system_branch_id'], strtoupper($validated['application_code'] ?? config('database_domains.default_application_code')), $copied
+        ), ['screen' => \App\Support\SystemLogText::SCREEN_ROLES, 'target_type' => 'Role', 'target_id' => $newRole->id, 'target_label' => $newRole->name], $request);
 
         return response()->json(['success' => true, 'data' => $newRole], 201);
     }

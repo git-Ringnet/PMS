@@ -241,4 +241,76 @@ class ActivityLogController extends Controller
             ],
         ]);
     }
+
+    /**
+     * Checklist TC_HT_06 dòng 37: xuất nhật ký thao tác ra file .xlsx thật.
+     * Trước đây xuất CSV nên Excel (máy dùng dấu ";" phân cách) dồn tất cả cột vào một ô.
+     * Frontend gửi đúng các cột đang hiện, theo thứ tự user đã chọn (dòng 542) và giá trị đã định dạng.
+     */
+    public function export(Request $request)
+    {
+        $validated = $request->validate([
+            'headers' => 'required|array|min:1|max:30',
+            'headers.*' => 'required|string|max:100',
+            'rows' => 'present|array|max:20000',
+            'rows.*' => 'array',
+        ]);
+        $headers = array_values($validated['headers']);
+        $width = count($headers);
+        $rows = array_map(function ($row) use ($width) {
+            $cells = array_slice(array_values($row), 0, $width);
+            $cells = array_map(fn ($value) => is_scalar($value) || $value === null ? $value : json_encode($value, JSON_UNESCAPED_UNICODE), $cells);
+
+            return array_pad($cells, $width, null);
+        }, $validated['rows']);
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Lịch sử thao tác');
+        $sheet->fromArray($headers, null, 'A1');
+        // Ghi từng ô dạng chuỗi để mã phòng / mã đăng ký có số 0 đầu hoặc dấu "=" không bị Excel đổi.
+        foreach ($rows as $r => $cells) {
+            foreach ($cells as $c => $value) {
+                $coordinate = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($c + 1) . ($r + 2);
+                if (is_int($value) || is_float($value)) {
+                    $sheet->setCellValue($coordinate, $value);
+                } else {
+                    $sheet->setCellValueExplicit($coordinate, (string) ($value ?? ''), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                }
+            }
+        }
+
+        $lastColumn = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($width);
+        $lastRow = max(1, count($rows) + 1);
+        $sheet->freezePane('A2');
+        $sheet->setAutoFilter("A1:{$lastColumn}{$lastRow}");
+        $sheet->getStyle("A1:{$lastColumn}1")->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['argb' => 'FFFFFFFF']],
+            'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['argb' => 'FF006BDB']],
+            'alignment' => ['horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER, 'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER],
+        ]);
+        $sheet->getStyle("A1:{$lastColumn}{$lastRow}")->applyFromArray([
+            'borders' => ['allBorders' => ['borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN, 'color' => ['argb' => 'FFD9D9D9']]],
+            'alignment' => ['vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP, 'wrapText' => true],
+        ]);
+
+        // Độ rộng theo nội dung (giới hạn), cột mô tả rộng hơn và tự xuống dòng để dễ đọc.
+        foreach ($headers as $index => $header) {
+            $longest = mb_strlen($header);
+            foreach ($rows as $cells) {
+                foreach (preg_split('/\R/u', (string) ($cells[$index] ?? '')) as $line) {
+                    $longest = max($longest, mb_strlen($line));
+                }
+            }
+            $limit = mb_stripos($header, 'mô tả') !== false ? 90 : 40;
+            $sheet->getColumnDimension(\PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($index + 1))
+                ->setWidth(min($limit, max(8, $longest + 2)));
+        }
+
+        $filename = 'Lich_su_thao_tac_' . now()->format('Y-m-d_His') . '.xlsx';
+
+        return response()->streamDownload(function () use ($spreadsheet) {
+            (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet))->save('php://output');
+        }, $filename, ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+    }
 }

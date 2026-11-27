@@ -173,7 +173,16 @@
               class="tab flex-1 h-10 px-1 text-xs text-center border-none transition-colors cursor-pointer bg-none select-none font-semibold"
               :style="{ color: currentTab === tKey ? '#2563EB' : '#000000D9' }"
             >
-              {{ tabLabels[tKey] }}
+              <span class="inline-flex items-center justify-center gap-1.5">
+                <img
+                  v-if="tabImage(tKey) && !brokenOutletImages[tKey]"
+                  :src="tabImage(tKey)"
+                  class="w-5 h-5 rounded object-cover shrink-0"
+                  :data-testid="'outlet-tab-image-' + tKey"
+                  @error="brokenOutletImages[tKey] = true"
+                />
+                <span>{{ tabLabels[tKey] }}</span>
+              </span>
             </button>
           </div>
 
@@ -419,14 +428,14 @@
 </template>
 
 <script setup>
-import { storageImageUrl } from '@/utils/storage-url'
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { Minus, Plus, Trash2, X, Save, RotateCcw } from '@lucide/vue'
 import { useUiStore } from '@/stores/ui-store'
 import { usePermission } from '@/composables/usePermission'
 import { fetchBookings, fetchSystemDate } from '@/services/booking-service'
 import http from '@/services/http'
 import { fetchHousekeepingOutlets } from '@/services/housekeeping-outlet-service'
+import { productDisplayImage, outletImage } from '@/utils/hk-product-image'
 // Import LoadingOverlay component của hệ thống
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
@@ -810,9 +819,10 @@ const loadDbProducts = async () => {
           name: p.name,
           // Product.price is the configured selling price, inclusive of taxes/fees.
           price: Number(p.price) || 0,
-          // Dòng 354: không gắn cứng localhost, dùng đường dẫn /storage/... chạy được trên server
-          image: storageImageUrl(p.image),
-          icon: p.image ? null : '📦',
+          // Dòng 354: không gắn cứng localhost, dùng đường dẫn /storage/... chạy được trên server.
+          // Dòng 534: sản phẩm chưa có ảnh riêng dùng ảnh outlet (giống màn Tạo menu).
+          image: productDisplayImage(p, configured),
+          icon: productDisplayImage(p, configured) ? null : '📦',
           product_code: p.product_code,
           service_charge_percent: svcPercent,
           special_tax_percent: spcTaxPercent,
@@ -849,6 +859,11 @@ const GROUP_LABELS = tabLabels
 const GROUP_COLORS = { MB: '#2563eb', LA: '#16a34a', BR: '#d97706', AM: '#7c3aed' }
 
 const currentTab = ref('')
+// Dòng 534: ảnh outlet hiện cạnh tên outlet trên thanh tab
+const brokenOutletImages = reactive({})
+function tabImage(tabKey) {
+  return outletImage(housekeepingOutlets.value.find(o => o.code === tabKey))
+}
 const tabKeys = computed(() => housekeepingOutlets.value.map(o => o.code))
 const productSearchQuery = ref('')
 const productSearchSelectedId = ref(null)

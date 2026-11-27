@@ -152,6 +152,14 @@ class CompanyController extends Controller
         $chainSync = app(ChainCatalogSyncService::class);
         $issues = $chainSync->companyDeletionIssues($company);
         if ($issues !== []) {
+            // Dòng 519 (note 20/11): công ty đã có dữ liệu ở bất kỳ chi nhánh nào thì báo gọn theo mẫu của khách.
+            if (collect($issues)->contains(fn ($issue) => $issue['reason'] === 'used')) {
+                $name = trim((string) $company->name);
+                $label = mb_stripos($name, 'công ty') === 0 ? $name : "Công ty {$name}";
+
+                return response()->json(['message' => "Không thể xóa vì {$label} đã phát sinh dữ liệu"], 422);
+            }
+
             return response()->json([
                 'message' => "Không thể xóa công ty '{$company->name}': " . $this->formatCompanyDeletionIssues($issues),
             ], 422);
