@@ -203,6 +203,14 @@ class BookingController extends Controller
                 })
                 ->with(['bookingRooms' => fn ($rooms) => $rooms->stayOnly()]);
         }
+        if ($request->boolean('affects_availability')) {
+            // Dòng 540 (note 26/11): màn phòng đến (Room map, DS phòng đến, Sang ngày) loại đăng ký có tình trạng
+            // không ảnh hưởng phòng (registration_statuses.is_availability = 0, vd Waiting). Chỉ áp khi màn hình truyền cờ.
+            $query->where(function ($bookings): void {
+                $bookings->whereNull('registration_status_id')
+                    ->orWhereHas('registrationStatus', fn ($registration) => $registration->where('is_availability', 1));
+            });
+        }
         $query->withSum([
             'payments as active_deposit_total' => function ($paymentQuery) {
                 $paymentQuery
@@ -1481,10 +1489,14 @@ class BookingController extends Controller
         }
         $becomesAvailable = $oldRegistration && !$oldRegistration->is_availability
             && $newRegistration && $newRegistration->is_availability;
+        // Dòng 540 (note 26/11): chuyển sang tình trạng không ảnh hưởng phòng (is_availability = 0) thì xóa số phòng đã gán.
+        $becomesUnavailable = (!$oldRegistration || $oldRegistration->is_availability)
+            && $newRegistration && !$newRegistration->is_availability;
+        $clearedRoomNumbers = [];
         $overBlock = null;
 
         try {
-            \Illuminate\Support\Facades\DB::transaction(function () use ($booking, $validated, $request, $allowAddingRoomsOnly, $bookingDatesChanged, $canSyncRoomDates, $canSyncArrivalDate, $syncRoomDates, $becomesAvailable, &$overBlock) {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($booking, $validated, $request, $allowAddingRoomsOnly, $bookingDatesChanged, $canSyncRoomDates, $canSyncArrivalDate, $syncRoomDates, $becomesAvailable, $becomesUnavailable, &$clearedRoomNumbers, &$overBlock) {
                 // Đồng bộ ngày của phòng theo cấu hình SyncRoomDateByBookingDate
                 if ($canSyncRoomDates
                     && $bookingDatesChanged
@@ -2076,6 +2088,20 @@ class BookingController extends Controller
                         }
                     }
                 }
+
+                // Dòng 540 (note 26/11): tình trạng mới không giữ phòng -> xóa số phòng đã gán của các phòng chưa nhận
+                // (chạy sau phần phân bổ phòng để không bị gán lại).
+                if ($becomesUnavailable) {
+                    $booking->bookingRooms()
+                        ->where('status', BookingRoom::STATUS_BOOKED)
+                        ->whereNotNull('room_number')
+                        ->where('room_number', '!=', '')
+                        ->get()
+                        ->each(function (BookingRoom $room) use (&$clearedRoomNumbers) {
+                            $clearedRoomNumbers[] = (string) $room->room_number;
+                            $room->update(['room_number' => null]);
+                        });
+                }
             });
         } catch (\Exception $e) {
             if ($overBlock !== null) {
@@ -2132,7 +2158,10 @@ class BookingController extends Controller
         return response()->json([
             'success' => true,
             'data'    => $booking,
-            'message' => 'Cập nhật đăng ký thành công!',
+            'cleared_room_numbers' => $clearedRoomNumbers,
+            'message' => $clearedRoomNumbers === []
+                ? 'Cập nhật đăng ký thành công!'
+                : 'Cập nhật đăng ký thành công! Đã xóa số phòng đã gán: ' . implode(', ', $clearedRoomNumbers) . '.',
         ]);
     }
 

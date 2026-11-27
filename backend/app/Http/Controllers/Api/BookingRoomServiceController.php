@@ -2887,7 +2887,7 @@ class BookingRoomServiceController extends Controller
             $roomTaxProfile = HotelService::taxProfile($roomService);
             $baseDescription = $roomService
                 ? $roomService->billDescription($room->room_number ?: $room->id, 'FO')
-                : 'Dịch vụ phòng nghỉ - Phòng ' . ($room->room_number ?: $room->id);
+                : HotelService::describeForRoom('Dịch vụ phòng nghỉ', $room->room_number ?: $room->id);
             $bill = ServiceBill::create(['Date' => $date->toDateTimeString(), 'OpenTime' => now()->format('H:i'), 'Guest' => $atMaster ? $booking->booking_name : ($guest?->guest?->full_name ?: $booking->booking_name), 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'DescriptionServive' => $baseDescription, 'Quantity' => 1, 'Amount' => $rate, 'ServiceCharge' => $roomTaxProfile['service_charge'], 'SpecialTax' => $roomTaxProfile['special_tax'], 'Tax' => $roomTaxProfile['tax'], 'Currency' => $original?->Currency ?: 'VND', 'Exchange' => 1, 'Edit' => 0, 'Folio' => $original?->Folio ?: '1', 'RegisterId1' => $booking->id, 'RentalRoomId1' => $room->id, 'CustomerId1' => $guest?->guest_id, 'CompanyId1' => $booking->company_id, 'RegisterID2' => $booking->id, 'RentalRoomId2' => $atMaster ? null : $room->id, 'CustomerId2' => $atMaster ? null : $guest?->guest_id, 'CompanyId2' => $booking->company_id, 'Username' => $user, 'Status' => 1, 'Outlet' => 'FO', 'Year' => $date->year, 'Month' => $date->month, 'Day' => $date->day, 'CreatedUser' => $user, 'CreatedDate' => now(), 'CreatedHour' => now()->format('H:i'), 'AdjustmentBillId' => $original?->Ma, 'IsAdjustment' => true]);
             $adults = max(1, (int) $room->adults);
             $breakfastRate = (float) (HotelSetting::first()?->breakfast_adult_rate ?? 0);
@@ -2900,7 +2900,7 @@ class BookingRoomServiceController extends Controller
             $breakfastTaxProfile = HotelService::taxProfile($breakfastService);
             $breakfastDescription = $breakfastService
                 ? $breakfastService->billDescription($room->room_number ?: $room->id, 'FO')
-                : 'Tiền ăn sáng người lớn - Phòng ' . ($room->room_number ?: $room->id);
+                : HotelService::describeForRoom('Tiền ăn sáng người lớn', $room->room_number ?: $room->id);
             $rmBreakdown = TaxBreakdownService::breakdown($rate, $roomTaxProfile['service_charge'], $roomTaxProfile['special_tax'], $roomTaxProfile['tax']);
             $bfBreakdown = TaxBreakdownService::breakdown($breakfastAmount, $breakfastTaxProfile['service_charge'], $breakfastTaxProfile['special_tax'], $breakfastTaxProfile['tax']);
             $rmMinusBreakdown = TaxBreakdownService::breakdown(-$breakfastAmount, $roomTaxProfile['service_charge'], $roomTaxProfile['special_tax'], $roomTaxProfile['tax']);
@@ -3215,13 +3215,21 @@ class BookingRoomServiceController extends Controller
                     $serviceCode = 'RM';
                     $serviceName = BookingRoomService::catalogName('RM', 'Dịch vụ phòng nghỉ');
                     $serviceTaxProfile = $roomTaxProfile;
-                    // Mô tả tiền phòng đúng như người dùng nhập ở màn hình post; bỏ trống mới dùng mô tả mặc định.
-                    $targetDesc = trim((string) $request->input('description', '')) ?: ($roomService
+                    // Mô tả tiền phòng đúng như người dùng nhập ở màn hình post; bỏ trống hoặc chỉ là tên dịch vụ mặc định
+                    // thì dùng mô tả "Tên dịch vụ + số phòng" (dòng 543, vd "Dịch vụ phòng nghỉ 101").
+                    $defaultTargetDesc = $roomService
                         ? $roomService->billDescription($targetRoom->room_number ?: $targetRoom->id, 'FO')
-                        : trim($serviceName . ' - Phòng ' . ($targetRoom->room_number ?: $targetRoom->id)));
+                        : HotelService::describeForRoom($serviceName, $targetRoom->room_number ?: $targetRoom->id);
+                    $inputDesc = trim((string) $request->input('description', ''));
+                    $plainServiceNames = array_filter([
+                        'Dịch vụ phòng nghỉ', $serviceName, $roomService?->name, $roomService?->billDescription(null, 'FO'),
+                    ]);
+                    $targetDesc = ($inputDesc === '' || in_array($inputDesc, $plainServiceNames, true))
+                        ? $defaultTargetDesc
+                        : $inputDesc;
                     $breakfastDesc = $breakfastService
                         ? $breakfastService->billDescription($targetRoom->room_number ?: $targetRoom->id, 'FO')
-                        : 'Tiền ăn sáng người lớn - Phòng ' . ($targetRoom->room_number ?: $targetRoom->id);
+                        : HotelService::describeForRoom('Tiền ăn sáng người lớn', $targetRoom->room_number ?: $targetRoom->id);
 
                     $setupBillIds = $this->postPendingSetupServicesForDate($targetRoom, $current, $user);
                     array_push($createdBills, ...$setupBillIds);

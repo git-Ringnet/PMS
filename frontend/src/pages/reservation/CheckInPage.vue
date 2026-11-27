@@ -139,7 +139,9 @@ const loadBookings = async () => {
       ...(isDepartureMode.value ? { list_mode: 'departures' } : isOccupiedMode.value ? { list_mode: 'inhouse' } : {}),
       ...(isFutureView.value ? { projected: true } : {}),
       with_billing: true,
-      stay_only: true
+      stay_only: true,
+      // Dòng 540 (note 26/11): loại đăng ký có tình trạng không ảnh hưởng phòng (is_availability = 0)
+      affects_availability: true
     })
     if (res.data && res.data.success !== false) {
       bookings.value = res.data.data || []

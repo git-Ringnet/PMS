@@ -6652,5 +6652,13 @@
  "Mã quyền \"{code}\" đã tồn tại, vui lòng nhập mã khác.": "Role code \"{code}\" already exists, please enter another code.",
  "Vui lòng nhập Tên quyền mới.": "Please enter the new role name.",
  "Tên quyền mới tối đa 100 ký tự.": "The new role name may have at most 100 characters.",
- "Vui lòng chọn chi nhánh.": "Please select a branch."
+ "Vui lòng chọn chi nhánh.": "Please select a branch.",
+ "Charge nhiều phòng: tiền phòng tự động theo giá từng phòng": "Multi-room charge: the automatic room charge uses each room's rate",
+ "Hệ thống post {0} bill tiền phòng cho mỗi phòng ({1} phòng), mỗi đêm một bill theo tiền phòng đã thiết lập của từng phòng.": "The system posts {0} room charge bills per room ({1} rooms), one bill per night at each room's configured rate.",
+ "Charge noshow thành công {0} phòng!": "No-show charged successfully for {0} rooms!",
+ "Đăng ký có tình trạng không ảnh hưởng phòng (không giữ phòng), không được kéo xếp phòng trên Kế hoạch phòng.": "This registration's status does not hold rooms, so it cannot be dragged onto a room on the Room Plan.",
+ "Tình trạng đăng ký mới không giữ phòng nên hệ thống sẽ xóa số phòng đã gán: {0}.": "The new registration status does not hold rooms, so the assigned room numbers will be cleared: {0}.",
+ "Đăng ký có tình trạng {0} không giữ phòng, không được xếp số phòng.": "Registration status {0} does not hold rooms, so a room number cannot be assigned.",
+ "{0} (theo từng phòng)": "{0} (per room)",
+ "Kho chưa chọn điểm bán hàng. Vui lòng cập nhật thông tin kho và chọn điểm bán hàng để hiển thị sản phẩm kiểm kê.": "This warehouse has no selling outlet yet. Update the warehouse information and choose a selling outlet to show products for the stock count."
 }

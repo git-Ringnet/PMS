@@ -33,12 +33,12 @@ export function normalizeHkCode(roomStatusCode, bookingStatus, isBackToBack = fa
 
 /**
  * Phòng "Lau dọn" khi lọc (khớp Room Map, dòng 357 note 23/11): phòng sạch/lau dọn (cùng icon ngôi sao),
- * trạng thái turndown/housekeeping, hoặc phòng khách trả trong ngày.
+ * trạng thái turndown/housekeeping.
+ * Note 26/11: chỉ xét tình trạng buồng; phòng khách trả trong ngày (CO) đang bẩn (OD) không phải phòng lau dọn.
  */
 export function isCleaningRoom(room) {
   const code = String(room?.room_status_code || '').toLowerCase()
   return ['clean', 'vacant_clean', 'occupied_clean', 'turndown', 'housekeeping', 'cleaning'].includes(code)
-    || room?.booking_status === 'checkout' || room?.displayBookingStatus === 'checkout'
 }
 
 /**

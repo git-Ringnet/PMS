@@ -29,3 +29,16 @@ test('row 540: tìm theo mã nghiệp vụ (booking_status_id) trước, rồi m
   assert.equal(isRegistrationStatusWithoutAvailability(statuses, '29'), true)
   assert.equal(isRegistrationStatusWithoutAvailability([{ id: 29, booking_status_id: 1, is_availability: true }, { id: 2, booking_status_id: 29, is_availability: false }], 29), true)
 })
+
+import { roomNumbersClearedByStatusChange } from '../src/utils/registration-status.js'
+
+test('row 540 (note 26/11): đổi sang tình trạng is_availability=0 thì báo các số phòng đã gán sẽ bị xóa', () => {
+  const rooms = [{ roomNumber: '101' }, { roomNumber: '' }, { roomNumber: '102' }, { roomNumber: '101' }]
+  assert.deepEqual(roomNumbersClearedByStatusChange(statuses, 1, 29, rooms), ['101', '102'])
+  // Không đổi nhóm tình trạng thì không xóa
+  assert.deepEqual(roomNumbersClearedByStatusChange(statuses, 1, 31, rooms), [])
+  assert.deepEqual(roomNumbersClearedByStatusChange(statuses, 29, 30, rooms), [])
+  assert.deepEqual(roomNumbersClearedByStatusChange(statuses, 29, 29, rooms), [])
+  // Đăng ký chưa có tình trạng chuyển sang Waiting cũng xóa
+  assert.deepEqual(roomNumbersClearedByStatusChange(statuses, null, 29, rooms), ['101', '102'])
+})

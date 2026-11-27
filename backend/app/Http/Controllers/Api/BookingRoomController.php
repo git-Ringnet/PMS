@@ -270,6 +270,23 @@ class BookingRoomController extends Controller
             }
         }
 
+        // Dòng 540 (note 26/11): đăng ký có tình trạng không ảnh hưởng phòng (is_availability = 0, vd Waiting)
+        // không được xếp/chuyển số phòng (Kế hoạch phòng kéo thả gọi API này). Bỏ số phòng vẫn được.
+        if ($request->filled('room_number')
+            && (string) $request->room_number !== (string) $bookingRoom->room_number
+            && $bookingRoom->status !== BookingRoom::STATUS_CHECKED_IN) {
+            $registrationStatusId = \App\Models\Booking::whereKey($bookingRoom->booking_id)->value('registration_status_id');
+            $registration = $registrationStatusId !== null
+                ? \App\Models\RegistrationStatus::where('booking_status_id', (int) $registrationStatusId)->first()
+                : null;
+            if ($registration && !$registration->is_availability) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Đăng ký có tình trạng {$registration->name} không giữ phòng, không được xếp số phòng.",
+                ], 422);
+            }
+        }
+
         $isInhouse = $bookingRoom->status === BookingRoom::STATUS_CHECKED_IN;
         $oldRoomAttributes = $bookingRoom->getAttributes();
         $oldBookingAttributes = \App\Models\Booking::find($bookingRoom->booking_id)?->getRawOriginal() ?? [];

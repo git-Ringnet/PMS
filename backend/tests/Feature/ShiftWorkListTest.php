@@ -290,6 +290,28 @@ class ShiftWorkListTest extends TestCase
         $this->assertSame(['Confirmed out 540'], $departures->pluck('bookingName')->all());
     }
 
+    /**
+     * Dòng 540 (note 26/11): Room map – DS phòng đến (CheckInPage) và Sang ngày – phòng đến lấy dữ liệu từ
+     * GET /bookings; khi truyền affects_availability=1 thì loại đăng ký có tình trạng is_availability=0.
+     * Không truyền thì giữ nguyên danh sách cũ cho các màn khác.
+     */
+    public function test_row_540_booking_list_can_exclude_registration_status_without_availability(): void
+    {
+        $waiting = $this->nonAvailabilityBooking('Waiting 540 list', 29, false);
+        $this->makeRoom($waiting, BookingRoom::STATUS_BOOKED, ['room_number' => '101']);
+        $confirmed = $this->nonAvailabilityBooking('Confirmed 540 list', 28, true);
+        $this->makeRoom($confirmed, BookingRoom::STATUS_BOOKED, ['room_number' => '606']);
+        $noStatus = $this->makeBooking('No status 540 list');
+        $this->makeRoom($noStatus, BookingRoom::STATUS_BOOKED, ['room_number' => '705']);
+
+        $filtered = collect($this->getJson('/api/bookings?stay_only=1&affects_availability=1')->assertOk()->json('data'))
+            ->pluck('booking_name')->sort()->values()->all();
+        $this->assertSame(['Confirmed 540 list', 'No status 540 list'], $filtered);
+
+        $all = collect($this->getJson('/api/bookings?stay_only=1')->assertOk()->json('data'))->pluck('booking_name')->all();
+        $this->assertContains('Waiting 540 list', $all);
+    }
+
     public function test_same_day_booked_room_is_pending_departure_but_overnight_booking_is_not(): void
     {
         $sameDayBooking = $this->makeBooking('Same-day reservation');

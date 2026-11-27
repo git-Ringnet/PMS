@@ -793,7 +793,8 @@ class BookingRoomServiceFolioTest extends TestCase
         $this->assertDatabaseHas('service_bills', [
             'RentalRoomId1' => $room->id, 'RentalRoomId2' => $room->id,
             'CustomerId1' => $secondary->id, 'CustomerId2' => $secondary->id,
-            'DescriptionServive' => 'Dịch vụ minibar - Phòng 105',
+            // Dòng 543: mô tả "Tên dịch vụ + số phòng"
+            'DescriptionServive' => 'Dịch vụ minibar 105',
             'ServiceCharge' => 5, 'SpecialTax' => 2, 'Tax' => 10,
         ]);
         $bill = ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', 'MB')->firstOrFail();

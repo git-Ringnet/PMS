@@ -224,6 +224,13 @@ test('Dòng 357 (23/11): lọc Lau dọn lấy phòng sạch/lau dọn (ngôi sa
   assert.equal(matchesHkFilter(mk('vacant_ready'), 'ready'), true)
 })
 
+test('Dòng 357 (26/11): lọc Lau dọn không lấy phòng CO đang bẩn (CO, OD) chỉ vì khách trả trong ngày', () => {
+  const mk = (code, extra = {}) => ({ room_status_code: code, booking_status: '', displayBookingStatus: '', ...extra })
+  assert.equal(matchesHkFilter(mk('occupied_dirty', { booking_status: 'checkout', displayBookingStatus: 'checkout' }), 'cleaning'), false)
+  assert.equal(matchesHkFilter(mk('vacant_dirty', { displayBookingStatus: 'checkout' }), 'cleaning'), false)
+  assert.equal(matchesHkFilter(mk('ooo', { booking_status: 'checkout' }), 'cleaning'), false)
+})
+
 // ── Note 23/11: bấm ô Tầng tick cả tầng (số tầng từ danh sách là số, tầng của phòng là chuỗi) ──
 import { roomsOnFloor } from '../src/utils/hk-room-status.js'
 

@@ -21,6 +21,22 @@ export function noshowAutoAmount(dateFrom, dateTo, roomRate, dailyPrices) {
   return total
 }
 
+/** Dòng 508 (note 26/11): ô "Tiền phòng tự động" là tiền 1 đêm (giá thiết lập của đêm đầu khoảng chọn, chưa có thì giá phòng). */
+export function noshowNightlyRate(dateFrom, roomRate, dailyPrices) {
+  return noshowAutoAmount(dateFrom, dateFrom, roomRate, dailyPrices)
+}
+
+/** Dòng 508 (note 26/11): tổng tiền = tổng tiền từng đêm của tất cả phòng được charge. */
+export function noshowRoomsTotal(rooms, dateFrom, dateTo) {
+  return (Array.isArray(rooms) ? rooms : [])
+    .reduce((sum, room) => sum + noshowAutoAmount(dateFrom, dateTo, room?.roomRate, room?.dailyRoomPrices), 0)
+}
+
+/** Dòng 540/543: mô tả bill noshow = "<tên dịch vụ> noshow <số phòng>", vd "Dịch vụ phòng nghỉ noshow 102". */
+export function noshowDescription(roomNumber, serviceName = 'Dịch vụ phòng nghỉ') {
+  return `${serviceName || 'Dịch vụ phòng nghỉ'} noshow ${roomNumber || ''}`.trim()
+}
+
 /** Dòng 508 (note 22/11): chọn từ ngày đến ngày là các ngày được charge, tính cả hai đầu. */
 export function noshowChargeNights(dateFrom, dateTo) {
   const from = utcDay(dateFrom)

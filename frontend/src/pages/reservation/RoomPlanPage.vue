@@ -1799,6 +1799,10 @@ async function loadBookings() {
               : (registrationStatus.is_availability === undefined
                 ? true
                 : Boolean(registrationStatus.is_availability)),
+            // Dòng 540 (note 26/11): đăng ký có tình trạng không ảnh hưởng phòng (is_availability = 0) không được kéo xếp phòng
+            isWithoutAvailability: registrationStatus?.is_availability !== undefined
+              && registrationStatus?.is_availability !== null
+              && !Boolean(Number(registrationStatus.is_availability)),
             isMoveHistory,
             isDayUse,
             nights: resolveRoomPlanNights({
@@ -3923,8 +3927,16 @@ function canCheckInBooking(bk) {
   return arrivalDateStr === sysDateStr
 }
 
+// Dòng 540 (note 26/11)
+const ROOM_PLAN_NO_AVAILABILITY_DRAG_MESSAGE = 'Đăng ký có tình trạng không ảnh hưởng phòng (không giữ phòng), không được kéo xếp phòng trên Kế hoạch phòng.'
+
 function handleDragStart(bk, event) {
   if (isHousekeepingModule.value) {
+    event.preventDefault()
+    return
+  }
+  if (bk.isWithoutAvailability) {
+    uiStore.showToast(ROOM_PLAN_NO_AVAILABILITY_DRAG_MESSAGE, 'warning')
     event.preventDefault()
     return
   }
@@ -4060,6 +4072,11 @@ function handleBookingPointerMove(event) {
     const bk = pending.booking
     bookingPointerPending = null
 
+    if (bk.isWithoutAvailability) {
+      uiStore.showToast(ROOM_PLAN_NO_AVAILABILITY_DRAG_MESSAGE, 'warning')
+      stopBookingPointerDrag()
+      return
+    }
     if (bk.type === 'InHouse') {
       uiStore.showToast('Phòng đang In-house không được phép kéo chuyển phòng trên Room Plan.', 'warning')
       stopBookingPointerDrag()
