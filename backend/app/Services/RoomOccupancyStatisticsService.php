@@ -104,13 +104,14 @@ class RoomOccupancyStatisticsService
         $projected = $this->summarize($projectedQuery(), true);
         $forecastBreakdown = $this->forecastBreakdown($projectedQuery(), $occupancyBaseRooms);
 
-        // Xem tương lai (note 30/10): chưa có check-in thực tế ở ngày đó, nên "đang ở" là phòng dự kiến
-        // ở trong ngày xem (đặt trước hoặc đang ở hiện tại còn ở qua ngày xem), không lấy phòng đang ở hôm nay.
+        // Xem tương lai (note 30/10): chưa có check-in thực tế ở ngày đó, nên "đang ở" là phòng đã ở từ trước
+        // và còn ở qua ngày xem (đặt trước hoặc đang ở hiện tại); phòng đến trong ngày xem thuộc "Đến",
+        // khớp ô phòng (occupied) và danh sách Đang ở. Phòng đến trong ngày vẫn nằm trong dự kiến cuối ngày.
         $occupiedCurrent = $isFutureView
             ? $this->summarize(
                 $assignedPhysicalQuery()
                     ->whereIn('status', [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN])
-                    ->whereDate('arrival_date', '<=', $dateString)
+                    ->whereDate('arrival_date', '<', $dateString)
                     ->whereDate('departure_date', '>', $dateString)
             )
             : $this->summarize(

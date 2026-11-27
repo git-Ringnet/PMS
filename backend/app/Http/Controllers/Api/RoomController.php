@@ -235,7 +235,11 @@ class RoomController extends Controller
                         $room->booking_status = 'occupied';
                     }
                 } else if ($br->status === \App\Models\BookingRoom::STATUS_BOOKED) {
-                    if ($isFutureView && $br->departure_date && $br->departure_date->toDateString() === $sysDateStr) {
+                    if ($isFutureView && $br->arrival_date && $br->arrival_date->toDateString() === $sysDateStr) {
+                        // Ngày đến tương lai (kể cả phòng có ngày đến = ngày đi): là phòng đến, như khi xem ngày hiện tại;
+                        // dấu đi trong ngày vẫn giữ qua has_departure_today.
+                        $room->booking_status = 'reserved';
+                    } elseif ($isFutureView && $br->departure_date && $br->departure_date->toDateString() === $sysDateStr) {
                         // Ngày đi tương lai: hiển thị như phòng dự kiến đi, không tính ở cuối ngày.
                         $room->booking_status = 'checkout';
                     } elseif ($isFutureView && $br->arrival_date && $br->departure_date

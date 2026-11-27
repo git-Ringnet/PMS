@@ -641,6 +641,9 @@ class RoomOccupancyStatisticsTest extends TestCase
         $this->assertSame(0, $stats('2026-08-05')['departures_total']);
         $this->assertSame(1, $stats('2026-08-06')['departures_total']);   // 101 đi đúng ngày 06
         $this->assertSame(0, $stats('2026-08-07')['departures_total']);   // 101 đã đi từ 06, không tính lại
+        // Ngày 07: 102 mới đến -> thuộc Đến, chưa phải Đang ở (khớp ô phòng/danh sách), nhưng có trong dự kiến cuối ngày.
+        $this->assertSame(0, $stats('2026-08-07')['occupied_current']);
+        $this->assertSame(1, $stats('2026-08-07')['occupied_projected']);
         $this->assertSame(1, $stats('2026-08-08')['occupied_current']);   // chỉ 102 dự kiến ở, không lấy 101
         $this->assertSame(1, $stats('2026-08-09')['departures_total']);   // 102 dự kiến đi
         $this->assertSame(0, $stats('2026-08-10')['occupied_current']);

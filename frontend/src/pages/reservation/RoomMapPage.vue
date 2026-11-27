@@ -514,9 +514,8 @@ const checkoutStats = computed(() => {
 const occupiedStats = computed(() => {
   const stats = currentDateStats.value
   if (stats?.occupied_current === undefined) return '-'
-  return isFutureView.value
-    ? `${stats.occupied_projected}/${stats.occupied_projected}`
-    : `${stats.occupied_current}/${stats.occupied_projected}`
+  // Tương lai cũng hiện "đang ở / dự kiến cuối ngày" để số đầu khớp ô phòng và danh sách Đang ở.
+  return `${stats.occupied_current}/${stats.occupied_projected}`
 })
 
 const currentOccupancyRate = computed(() => Number(currentDateStats.value?.occupancy_rate) || 0)
