@@ -126,6 +126,8 @@ class DepartmentHotelServiceTest extends TestCase
             'description' => 'Phụ thu thêm giường',
         ]);
 
-        $this->assertSame('Phụ thu thêm giường - Phòng 106', $service->billDescription('106'));
+        // Dòng 543: mô tả bill đồng nhất "Tên dịch vụ + số phòng", vd "Dịch vụ phòng nghỉ 102"
+        $this->assertSame('Phụ thu thêm giường 106', $service->billDescription('106'));
+        $this->assertSame('Phụ thu thêm giường', $service->billDescription());
     }
 }

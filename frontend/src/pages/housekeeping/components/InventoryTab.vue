@@ -1037,6 +1037,10 @@ const selectedGroupLabel = computed(() => 'Tất cả')
 
 const handleOutsideClick = (e) => {
   if (!e.target.closest('.group-dropdown-wrapper')) showGroupDropdown.value = false
+  // Dòng 372 (note 26/11): bấm chuột ra ngoài thì danh sách Kho đã ẩn tự đóng
+  if (!e.target.closest('[data-testid="hidden-warehouses-btn"], [data-testid="hidden-warehouses-panel"]')) {
+    showHiddenWarehouses.value = false
+  }
 }
 
 // toggle tất cả SP checkbox
@@ -1856,7 +1860,9 @@ const otherWarehouses = computed(() =>
               </thead>
               <tbody class="divide-y divide-slate-100 text-[#000000D9] text-xs">
                 <tr v-if="productsInStock.length === 0">
-                  <td colspan="2" class="py-8 text-center text-slate-400 text-xs border-slate-200">Kho này chưa có sản phẩm nào chọn "Có theo dõi" tồn kho</td>
+                  <!-- Dòng 372 (note 26/11): sản phẩm kiểm kê lấy theo điểm bán hàng của kho -->
+                  <td v-if="!(activeWarehouse?.outlet_ids || []).length" colspan="2" data-testid="inventory-no-outlet-msg" class="py-8 text-center text-slate-400 text-xs border-slate-200">Kho chưa chọn điểm bán hàng. Vui lòng cập nhật thông tin kho và chọn điểm bán hàng để hiển thị sản phẩm kiểm kê.</td>
+                  <td v-else colspan="2" class="py-8 text-center text-slate-400 text-xs border-slate-200">Kho này chưa có sản phẩm nào chọn "Có theo dõi" tồn kho</td>
                 </tr>
                 <template v-else v-for="wh in productsInStock" :key="'wh-'+wh.id">
                   <!-- Outlet Row (e.g. Minibar, Giặt ủi...) -->

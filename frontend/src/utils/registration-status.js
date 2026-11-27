@@ -11,3 +11,17 @@ export function isRegistrationStatusWithoutAvailability(statuses, registrationSt
   if (!status) return false
   return status.is_availability === false || Number(status.is_availability) === 0
 }
+
+/**
+ * Dòng 540 (note 26/11): sửa đăng ký từ tình trạng giữ phòng (hoặc chưa có tình trạng) sang tình trạng
+ * is_availability = 0 thì backend xóa số phòng đã gán. Trả về các số phòng sẽ bị xóa để báo trong thông báo xác nhận.
+ */
+export function roomNumbersClearedByStatusChange(statuses, oldStatusId, newStatusId, rooms) {
+  if (!newStatusId || Number(oldStatusId) === Number(newStatusId)) return []
+  if (!isRegistrationStatusWithoutAvailability(statuses, newStatusId)) return []
+  if (oldStatusId && isRegistrationStatusWithoutAvailability(statuses, oldStatusId)) return []
+  const numbers = (Array.isArray(rooms) ? rooms : [])
+    .map(room => String(room?.roomNumber ?? '').trim())
+    .filter(Boolean)
+  return [...new Set(numbers)]
+}

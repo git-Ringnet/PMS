@@ -157,7 +157,7 @@ class NightAuditController extends Controller
                 // Dòng 416: BF và RM âm dùng mô tả dịch vụ ăn sáng + số phòng.
                 $breakfastDescription = $breakfastService
                     ? $breakfastService->billDescription($roomNumber, 'FO')
-                    : 'Tiền ăn sáng người lớn - Phòng ' . $roomNumber;
+                    : HotelService::describeForRoom('Tiền ăn sáng người lớn', $roomNumber);
 
                 if ($breakfastAmount > 0) {
                     // Phần bill chia folio có số suất lẻ theo tỷ lệ (như chia folio); bill nguyên đêm tối thiểu 1 suất.
@@ -523,6 +523,11 @@ class NightAuditController extends Controller
             if ($chargeOption !== 'no_charge') {
                 $arrivalDate   = Carbon::parse($room->arrival_date)->startOfDay();
                 $departureDate = Carbon::parse($room->departure_date)->startOfDay();
+                // Dòng 529: phòng 0 đêm (ngày đi = ngày đến) chỉ được noshow by stage; khi chọn charge
+                // thì thu 1 lần tiền phòng vào ngày đến, tránh log "Charge Room" mà không có bill.
+                if ($departureDate->lte($arrivalDate)) {
+                    $departureDate = $arrivalDate->copy()->addDay();
+                }
                 $nightDate     = $arrivalDate->copy();
 
                 while ($nightDate->lt($departureDate)) {
@@ -1370,14 +1375,14 @@ class NightAuditController extends Controller
         $breakfastTaxProfile = HotelService::taxProfile($breakfastService);
         $description = $roomService
             ? $roomService->billDescription($room->room_number, 'FO')
-            : 'Dịch vụ phòng nghỉ' . ($room->room_number ? ' - Phòng ' . $room->room_number : '');
+            : HotelService::describeForRoom('Dịch vụ phòng nghỉ', $room->room_number);
         // Dòng 540: tiền phòng noshow / late check-in có charge mô tả "Dịch vụ phòng nghỉ noshow 102".
         if ($isNoshow) {
             $description = trim(($roomService?->name ?: 'Dịch vụ phòng nghỉ') . ' noshow ' . ($room->room_number ?: ''));
         }
         $breakfastDescription = $breakfastService
             ? $breakfastService->billDescription($room->room_number, 'FO')
-            : 'Tiền ăn sáng người lớn' . ($room->room_number ? ' - Phòng ' . $room->room_number : '');
+            : HotelService::describeForRoom('Tiền ăn sáng người lớn', $room->room_number);
         $finalReason = $description;
 
         // 3. Tạo ServiceBill

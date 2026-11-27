@@ -2429,6 +2429,51 @@ class BookingBusinessRulesTest extends TestCase
         $this->assertSame('101', $room->fresh()->room_number);
     }
 
+    private function waitingStatus540(): void
+    {
+        DB::table('booking_statuses')->insertOrIgnore([['id' => 29, 'name' => 'Waiting']]);
+        RegistrationStatus::firstOrCreate(['booking_status_id' => 29], ['name' => 'Waiting', 'is_availability' => false]);
+    }
+
+    /** Dòng 540 (note 26/11): Kế hoạch phòng thả block vào phòng (PUT booking room) không được xếp phòng cho đăng ký Waiting. */
+    public function test_row_540_room_plan_drop_cannot_assign_room_to_booking_without_availability(): void
+    {
+        $this->waitingStatus540();
+        $booking = $this->createBooking(['arrival_date' => '2026-09-06', 'departure_date' => '2026-09-08', 'num_of_days' => 2, 'registration_status_id' => 29]);
+        $room = BookingRoom::create([
+            'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id, 'arrival_date' => '2026-09-06',
+            'departure_date' => '2026-09-08', 'rate' => 500000, 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $this->putJson("/api/bookings/{$booking->id}/rooms/{$room->id}", ['room_number' => '101'])
+            ->assertStatus(422)
+            ->assertJsonPath('success', false);
+
+        $this->assertNull($room->fresh()->room_number);
+    }
+
+    /**
+     * Dòng 540 (note 26/11): sửa đăng ký từ tình trạng giữ phòng sang tình trạng is_availability=0 thì xóa số phòng
+     * đã gán của các phòng chưa nhận, trả về danh sách phòng đã xóa số để màn hình báo.
+     */
+    public function test_row_540_switching_to_status_without_availability_clears_assigned_room_numbers(): void
+    {
+        $this->waitingStatus540();
+        $booking = $this->createBooking(['arrival_date' => '2026-09-06', 'departure_date' => '2026-09-08', 'num_of_days' => 2,
+            'registration_status_id' => $this->regStatus->booking_status_id]);
+        $room = BookingRoom::create([
+            'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id, 'arrival_date' => '2026-09-06',
+            'departure_date' => '2026-09-08', 'rate' => 500000, 'status' => BookingRoom::STATUS_BOOKED, 'room_number' => '101',
+        ]);
+
+        $response = $this->putJson("/api/bookings/{$booking->id}", $this->roomAllocationPayload540($booking, $room, 29, '101'))
+            ->assertSuccessful();
+
+        $this->assertNull($room->fresh()->room_number);
+        $this->assertSame(29, (int) $booking->fresh()->registration_status_id);
+        $this->assertSame(['101'], $response->json('cleared_room_numbers'));
+    }
+
     /**
      * Row 488: đêm tiền phòng mới theo "Tiền phòng gửi Master" của đăng ký (GIT -> is_room 0, FIT -> 1).
      */
@@ -3790,6 +3835,34 @@ class BookingBusinessRulesTest extends TestCase
         ])->assertSuccessful();
 
         return [$booking, $room];
+    }
+
+    /**
+     * Dòng 543: nút Thêm tiền phòng / post tiền phòng tạo bill mô tả "Tên dịch vụ + số phòng" (vd "Dịch vụ phòng nghỉ 101").
+     * Màn hình gửi mô tả mặc định chỉ có tên dịch vụ thì hệ thống tự ghép số phòng; mô tả người dùng tự nhập giữ nguyên.
+     */
+    public function test_row_543_room_charge_bill_description_is_service_name_plus_room_number(): void
+    {
+        [, $room] = $this->inhouseRoomWithPrepostedRoomCharge(false);
+        $descriptionOn = fn (string $date) => ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', 'RM')
+            ->whereDate('Date', $date)->value('DescriptionServive');
+
+        // Không gửi mô tả
+        $this->assertSame('Dịch vụ phòng nghỉ 101', $descriptionOn('2026-08-07'));
+
+        // Gửi mô tả mặc định của nút Thêm tiền phòng
+        $this->postJson('/api/booking-room-services/post-room-charge', [
+            'booking_room_id' => $room->id, 'date_from' => '2026-08-08', 'date_to' => '2026-08-08', 'mode' => 'auto',
+            'description' => 'Dịch vụ phòng nghỉ',
+        ])->assertSuccessful();
+        $this->assertSame('Dịch vụ phòng nghỉ 101', $descriptionOn('2026-08-08'));
+
+        // Người dùng tự nhập mô tả khác thì giữ nguyên
+        $this->postJson('/api/booking-room-services/post-room-charge', [
+            'booking_room_id' => $room->id, 'date_from' => '2026-08-09', 'date_to' => '2026-08-09', 'mode' => 'auto',
+            'description' => 'Tiền phòng thêm theo yêu cầu khách',
+        ])->assertSuccessful();
+        $this->assertSame('Tiền phòng thêm theo yêu cầu khách', $descriptionOn('2026-08-09'));
     }
 
     private function editRoomPriceFromRegistration(BookingRoom $room, string $date, float $rate)

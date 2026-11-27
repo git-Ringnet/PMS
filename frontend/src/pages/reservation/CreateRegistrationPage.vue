@@ -26,7 +26,7 @@ import { summarizeRoomTotals } from '@/utils/booking-room-totals'
 import { collectRoomOwnedBills, distributeServicesByBillOrigin, excludeBillsBeforeMoveIn, mergeRoomServices, transferredBillIds } from '@/utils/booking-bill-origin'
 import { extraBedBillRow, findExtraBedBillsOutsideStay, findMoveHistoryExtraBedBill } from '@/utils/booking-room-extra-bed-bills'
 import { displayNightCount } from '@/utils/day-use-nights'
-import { isRegistrationStatusWithoutAvailability } from '@/utils/registration-status'
+import { isRegistrationStatusWithoutAvailability, roomNumbersClearedByStatusChange } from '@/utils/registration-status'
 import { applySavedRoomColumns, serializeRoomColumns } from '@/utils/booking-room-columns'
 import { normalizeShuttleInfo, buildBookingHistoryLocation } from '@/utils/booking-shuttle-history'
 import {
@@ -2902,7 +2902,7 @@ onMounted(async () => {
   const bc = getPmsBroadcastChannel()
   if (bc) bc.addEventListener('message', handleBookingUpdatedBroadcast)
   // Dòng 400: máy khác gán số phòng thì danh sách phòng trống cũng phải tải lại.
-  if (echo) echo.channel('pms-channel').listen('.reservation.updated', invalidateVacantRooms)
+  if (echo) echo.channel('pms-channel').listen('.reservation.updated', handleReservationUpdatedEcho)
   try {
     isLoading.value = true
     await Promise.all([loadDropdowns(), loadBookings()])
@@ -2992,7 +2992,8 @@ onBeforeUnmount(() => {
   activeBookingNotificationsTimers.forEach(clearTimeout)
   document.removeEventListener('click', handleGlobalClick)
   window.removeEventListener('booking-updated', handleBookingUpdatedEvent)
-  if (echo) echo.channel('pms-channel').stopListening('.reservation.updated', invalidateVacantRooms)
+  if (echo) echo.channel('pms-channel').stopListening('.reservation.updated', handleReservationUpdatedEcho)
+  clearTimeout(reservationEchoTimer)
   clearTimeout(vacantRoomsRefreshTimer)
   window.removeEventListener('deposit-updated', loadBookings)
   window.removeEventListener('hotel-config-updated', handleHotelConfigUpdated)
@@ -5760,6 +5761,18 @@ async function handleSaveNewBooking() {
       confirmMessage = `Bạn có chắc chắn muốn cập nhật đơn đặt phòng ${modalForm.value.bookingCode} với ${modalForm.value.nights} đêm?`
       confirmText = 'Cập nhật'
     }
+    // Dòng 540 (note 26/11): chuyển sang tình trạng không giữ phòng thì số phòng đã gán sẽ bị xóa
+    const savedTab = tabs.value.find(t => t.dbId === modalForm.value.dbId)
+    const clearedRoomNumbers = roomNumbersClearedByStatusChange(
+      registrationStatuses.value,
+      savedTab?.registrationStatusId,
+      modalForm.value.registrationStatusId,
+      savedTab?.rooms,
+    )
+    if (clearedRoomNumbers.length > 0) {
+      const clearRoomNote = `Tình trạng đăng ký mới không giữ phòng nên hệ thống sẽ xóa số phòng đã gán: ${clearedRoomNumbers.join(', ')}.`
+      confirmMessage = `${confirmMessage} ${clearRoomNote}`
+    }
   }
 
   const confirmed = await uiStore.confirm({
@@ -5949,6 +5962,21 @@ const vacantRoomsLoader = createVacantRoomsLoader(vacantRoomsMap, async (params)
 
 // Gộp các sự kiện cập nhật dồn dập thành một lần tải lại.
 let vacantRoomsRefreshTimer = null
+// Dòng 543: booking bị thay đổi ở màn/máy khác (vd Sang ngày noshow, late check-in) -> tải lại booking đang mở.
+// Gom các sự kiện liên tiếp của cùng thao tác (mỗi bảng con đều phát sự kiện) rồi tải lại một lần.
+const reservationEchoIds = new Set()
+let reservationEchoTimer = null
+function handleReservationUpdatedEcho(event) {
+  invalidateVacantRooms()
+  if (event?.reservationId) reservationEchoIds.add(String(event.reservationId))
+  clearTimeout(reservationEchoTimer)
+  reservationEchoTimer = setTimeout(() => {
+    const ids = [...reservationEchoIds]
+    reservationEchoIds.clear()
+    ids.forEach(id => { refreshMatchingBooking(id).catch(console.error) })
+  }, 400)
+}
+
 function invalidateVacantRooms() {
   clearTimeout(vacantRoomsRefreshTimer)
   vacantRoomsRefreshTimer = setTimeout(() => vacantRoomsLoader.refresh(), 300)
@@ -6261,9 +6289,20 @@ async function triggerAction(actionName) {
       uiStore.showToast(dateError, 'error')
       return
     }
+    // Dòng 540 (note 26/11): chuyển sang tình trạng không giữ phòng thì số phòng đã gán sẽ bị xóa
+    const clearedRoomNumbers = roomNumbersClearedByStatusChange(
+      registrationStatuses.value,
+      tab?._backup?.registrationStatusId,
+      tab?.registrationStatusId,
+      tab?._backup?.rooms || tab?.rooms,
+    )
+    const saveConfirmMessage = `Bạn có chắc chắn muốn lưu các thông tin thay đổi cho đăng ký "${tab?.bookingName || ''}"?`
+    const clearRoomNote = clearedRoomNumbers.length > 0
+      ? `Tình trạng đăng ký mới không giữ phòng nên hệ thống sẽ xóa số phòng đã gán: ${clearedRoomNumbers.join(', ')}.`
+      : ''
     uiStore.confirm({
       title: 'Xác nhận lưu đăng ký',
-      message: `Bạn có chắc chắn muốn lưu các thông tin thay đổi cho đăng ký "${tab?.bookingName || ''}"?`,
+      message: clearRoomNote ? `${saveConfirmMessage} ${clearRoomNote}` : saveConfirmMessage,
       confirmText: 'Lưu',
       cancelText: 'Hủy'
     }).then(async (confirmed) => {
@@ -6966,6 +7005,14 @@ async function triggerAction(actionName) {
     chargeNoshowDepartureDate.value = targetRoom.checkOut
     chargeNoshowRoomRate.value = Number(targetRoom.price) || 0
     chargeNoshowDailyPrices.value = targetRoom.dailyRoomPrices || null
+    // Dòng 508 (note 26/11): chọn nhiều phòng thì charge một lúc cho tất cả phòng đã chọn
+    chargeNoshowRooms.value = selected.map(r => ({
+      roomId: r.bookingRoomId,
+      roomNumber: r.roomNumber,
+      guestName: r.guestName || '',
+      roomRate: Number(r.price) || 0,
+      dailyRoomPrices: r.dailyRoomPrices || null,
+    }))
     isChargeNoshowModalOpen.value = true
   } else if (actionName === 'Xóa') {
     const tab = activeTab.value
@@ -7000,6 +7047,7 @@ const chargeNoshowRoomNumber = ref('')
 const chargeNoshowArrivalDate = ref('')
 const chargeNoshowDepartureDate = ref('')
 const chargeNoshowRoomRate = ref(0)
+const chargeNoshowRooms = ref([])
 
 async function handleChargeNoshowSaved() {
   await loadBookings()
@@ -10850,6 +10898,7 @@ defineExpose({
         :arrivalDate="chargeNoshowArrivalDate"
         :departureDate="chargeNoshowDepartureDate"
         :roomRate="chargeNoshowRoomRate"
+        :rooms="chargeNoshowRooms"
         @saved="handleChargeNoshowSaved"
       />
     </Teleport>

@@ -315,6 +315,45 @@ class NightAuditTest extends TestCase
         ])->assertSuccessful();
     }
 
+    public function test_row_529_zero_night_room_no_show_by_stage_with_charge_posts_one_room_bill_on_arrival_date()
+    {
+        $sysDateStr = Carbon::parse(SystemDateRoll::latest('id')->first()->system_date)->toDateString();
+        $booking = Booking::create([
+            'booking_name' => 'NGAY 529 STAGE', 'arrival_date' => $sysDateStr, 'departure_date' => $sysDateStr,
+            'num_of_days' => 0, 'booking_date' => $sysDateStr, 'created_by' => 'admin', 'registration_status_id' => 1,
+        ]);
+        foreach (['531', '532'] as $no) {
+            Room::updateOrCreate(['room_number' => $no], ['room_class_id' => 1, 'room_form_id' => 1, 'floor' => '5', 'room_status_code' => 'vacant_ready']);
+        }
+        $room = BookingRoom::create([
+            'id' => 'G1000531', 'booking_id' => $booking->id, 'room_class_id' => 1, 'room_number' => '531',
+            'arrival_date' => $sysDateStr, 'departure_date' => $sysDateStr,
+            'status' => BookingRoom::STATUS_BOOKED, 'rate' => 540000,
+        ]);
+
+        $this->actingAs($this->user)->postJson('/api/night-audit/no-show', [
+            'booking_room_id' => $room->id, 'charge_option' => 'room_only', 'reason' => 'test 529 stage',
+        ])->assertSuccessful();
+
+        // Phòng 0 đêm chọn charge: thu 1 lần tiền phòng vào ngày đến, không để log "Charge Room" mà không có bill.
+        $bills = ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', 'RM')->get();
+        $this->assertCount(1, $bills);
+        $this->assertSame($sysDateStr, Carbon::parse($bills[0]->Date)->toDateString());
+        $this->assertEquals(540000, (float) $bills[0]->Amount);
+        $this->assertSame('Dịch vụ phòng nghỉ noshow 531', $bills[0]->DescriptionServive);
+
+        // Không charge thì vẫn không có bill
+        $free = BookingRoom::create([
+            'id' => 'G1000532', 'booking_id' => $booking->id, 'room_class_id' => 1, 'room_number' => '532',
+            'arrival_date' => $sysDateStr, 'departure_date' => $sysDateStr,
+            'status' => BookingRoom::STATUS_BOOKED, 'rate' => 540000,
+        ]);
+        $this->actingAs($this->user)->postJson('/api/night-audit/no-show', [
+            'booking_room_id' => $free->id, 'charge_option' => 'no_charge', 'reason' => 'test 529 stage',
+        ])->assertSuccessful();
+        $this->assertDatabaseMissing('service_bills', ['RentalRoomId1' => $free->id]);
+    }
+
     /**
      * Test Noshow hoàn toàn giải phóng phòng
      */

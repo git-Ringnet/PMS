@@ -65,8 +65,16 @@ class HotelService extends Model
             ->first();
         $description = trim((string) ($department?->pivot?->description ?: $this->name));
 
-        return $roomNumber
-            ? $description . ' - Phòng ' . $roomNumber
-            : $description;
+        // Dòng 543: mô tả bill đồng nhất "Tên dịch vụ + số phòng", vd "Dịch vụ phòng nghỉ 102"
+        // (cùng mẫu với tiền phòng noshow "Dịch vụ phòng nghỉ noshow 102" - dòng 540).
+        return self::describeForRoom($description, $roomNumber);
+    }
+
+    /** Dòng 543: ghép mô tả bill dịch vụ với số phòng theo mẫu "<tên dịch vụ> <số phòng>". */
+    public static function describeForRoom(string $description, $roomNumber = null): string
+    {
+        $roomNumber = trim((string) ($roomNumber ?? ''));
+
+        return trim($roomNumber !== '' ? $description . ' ' . $roomNumber : $description);
     }
 }

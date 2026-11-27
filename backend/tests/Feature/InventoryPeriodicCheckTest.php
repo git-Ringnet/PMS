@@ -152,6 +152,9 @@ class InventoryPeriodicCheckTest extends TestCase
             Product::create(['product_category_id' => $snack->id, 'name' => $n, 'price' => 5000, 'track_stock' => true, 'is_active' => true, 'inventory_id' => (string) $this->minibar->id]);
         }
         Product::create(['product_category_id' => $amenity->id, 'name' => 'Bàn chải', 'price' => 5000, 'track_stock' => true, 'is_active' => true, 'inventory_id' => (string) $this->minibar->id]);
+        // Note 26/11: kho kiểm kê cho nhiều outlet (Minibar + Amenity) mới có nhóm Amenity.
+        \DB::table('housekeeping_outlets')->updateOrInsert(['code' => 'AM'], ['name' => 'Amenity', 'service_code' => 'AM', 'is_active' => 1, 'order_index' => 3]);
+        $this->minibar->update(['outlet_id' => 'MB,AM']);
 
         $tree = collect($this->getJson("/api/inventory/products-in-stock?warehouse_id={$this->minibar->id}")->assertOk()->json('data'));
 
@@ -215,6 +218,25 @@ class InventoryPeriodicCheckTest extends TestCase
         $this->assertContains('Oishi', $names);
         $this->assertContains('Bánh Danisa', $names);
         $this->assertNotContains('Giặt áo sơ mi', $names, 'sản phẩm của outlet khác không được lẫn vào');
+    }
+
+    /**
+     * Dòng 372 (note 26/11): kho có sẵn và kho mới hiển thị thống nhất = sản phẩm theo dõi tồn của outlet được chọn
+     * làm điểm bán hàng của kho. Sản phẩm outlet khác dù inventory_id trỏ vào kho (dữ liệu cũ) hay chưa gán kho đều không hiện.
+     */
+    public function test_existing_warehouse_only_lists_products_of_its_selling_outlets(): void
+    {
+        $amenity = ProductCategory::create(['name' => 'Đồ dùng', 'outlet' => 'Amenity', 'is_active' => true]);
+        Product::create(['product_category_id' => $amenity->id, 'name' => 'Bàn chải', 'price' => 5000, 'track_stock' => true, 'is_active' => true, 'inventory_id' => (string) $this->minibar->id]);
+        Product::create(['product_category_id' => $amenity->id, 'name' => 'Lược chưa gán kho', 'price' => 5000, 'track_stock' => true, 'is_active' => true]);
+
+        $tree = $this->getJson("/api/inventory/products-in-stock?warehouse_id={$this->minibar->id}")->assertOk()->json('data');
+        $names = $this->listedProductNames($this->minibar);
+
+        $this->assertNotContains('Bàn chải', $names);
+        $this->assertNotContains('Lược chưa gán kho', $names);
+        $this->assertSame(['minibar'], array_column($tree, 'name'));
+        $this->assertSame(['Coca Cola', 'Nước lon chưa gán kho', 'Pepsi'], $names);
     }
 
     public function test_warehouse_covering_all_outlets_lists_every_tracked_product(): void

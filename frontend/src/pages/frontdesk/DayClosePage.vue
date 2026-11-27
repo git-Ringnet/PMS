@@ -28,6 +28,7 @@ import {
   CheckCircle2
 } from '@lucide/vue'
 import http from '@/services/http'
+import { notifyBookingsUpdated } from '@/utils/booking-update-broadcast'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { useNightAuditStore } from '@/stores/night-audit-store'
@@ -281,7 +282,8 @@ const fetchRealData = async () => {
     }
 
     // 2. Lấy danh sách booking từ backend API
-    const bookingsRes = await http.get('/bookings', { params: { stay_only: true } })
+    // Dòng 540 (note 26/11): phòng đến không tính đăng ký có tình trạng không ảnh hưởng phòng (is_availability = 0)
+    const bookingsRes = await http.get('/bookings', { params: { stay_only: true, affects_availability: true } })
     if (bookingsRes.data && (bookingsRes.data.success || Array.isArray(bookingsRes.data.data))) {
       const apiData = Array.isArray(bookingsRes.data.data) ? bookingsRes.data.data : (bookingsRes.data || [])
       rawBookings.value = apiData
@@ -462,6 +464,7 @@ function processRealBookings(bookings) {
 
       groupsMap[companyName].items.push({
         id: `real-row-${b.id}-${r.id || rIdx}`,
+        bookingId: b.id,
         bookingCode: b.code || b.booking_code || `GAL${b.id}`,
         vat: b.has_vat ?? true,
         roomNumber: isAssigned ? (r.room?.room_number || r.room?.code || r.room_number) : 'Chưa gán',
@@ -648,7 +651,7 @@ async function handlePostRoomCharge() {
         date_to: sysDateStr,
         mode: 'auto',
         folio: 1,
-        description: `Tiền phòng ngày ${formatDateVN(sysDateStr)} (Post thủ công)`,
+        // Dòng 543: không gửi mô tả riêng; hệ thống ghi "Tên dịch vụ + số phòng" (vd "Dịch vụ phòng nghỉ 405")
         log_batch: logBatch
       }
 
@@ -726,6 +729,8 @@ async function confirmArrivalUpdate() {
       })
     }
     uiStore.showToast(`Đã dời ngày đến thành công cho ${selected.length} phòng.`, 'success')
+    // Dòng 543: tab Đăng ký đang mở booking này tải lại ngay
+    notifyBookingsUpdated(selected.map(item => item.bookingId))
     await fetchRealData()
   } catch (err) {
     console.error(err)
@@ -772,6 +777,8 @@ async function confirmNoshow() {
     }
 
     uiStore.showToast('Đã ghi nhận Noshow thành công cho các phòng đã chọn.', 'success')
+    // Dòng 543: tab Đăng ký đang mở booking này tải lại ngay
+    notifyBookingsUpdated(selected.map(item => item.bookingId))
     if (warningMsg) {
       setTimeout(() => uiStore.showToast(warningMsg, 'warning'), 600)
     }
