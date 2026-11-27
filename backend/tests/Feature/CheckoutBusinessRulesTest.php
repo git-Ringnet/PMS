@@ -68,8 +68,17 @@ class CheckoutBusinessRulesTest extends TestCase
         HotelSetting::create(['hotel_name' => 'Checkout test hotel', 'breakfast_adult_rate' => 50000]);
     }
 
-    public function test_master_checkout_ignores_room_departure_date(): void
+    public function test_master_checkout_blocks_when_any_active_room_checks_out_early(): void
     {
+        $this->postJson("/api/bookings/{$this->booking->id}/checkout")
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'early_checkout_not_allowed')
+            ->assertJsonPath('message', 'Không thể check out sớm cho một số phòng');
+
+        $this->assertDatabaseHas('bookings', ['id' => $this->booking->id, 'status' => Booking::STATUS_CHECKIN]);
+        $this->assertDatabaseHas('booking_rooms', ['id' => $this->room->id, 'status' => BookingRoom::STATUS_CHECKED_IN]);
+
+        $this->room->update(['departure_date' => '2026-08-04']);
         $this->postJson("/api/bookings/{$this->booking->id}/checkout")->assertSuccessful();
 
         $this->assertDatabaseHas('bookings', ['id' => $this->booking->id, 'status' => Booking::STATUS_CHECKOUT]);
@@ -78,6 +87,7 @@ class CheckoutBusinessRulesTest extends TestCase
 
     public function test_master_checkout_lists_rooms_with_unpaid_bills_without_changing_stay_data(): void
     {
+        $this->room->update(['departure_date' => '2026-08-04']);
         Room::create([
             'room_number' => '107',
             'room_form_id' => RoomForm::firstOrFail()->id,
@@ -90,7 +100,7 @@ class CheckoutBusinessRulesTest extends TestCase
             'room_number' => '107',
             'room_class_id' => RoomClass::firstOrFail()->id,
             'arrival_date' => '2026-08-01',
-            'departure_date' => '2026-08-06',
+            'departure_date' => '2026-08-04',
             'status' => BookingRoom::STATUS_CHECKED_IN,
         ]);
         $secondGuest = Guest::create(['full_name' => 'Guest room 107']);
@@ -200,6 +210,7 @@ class CheckoutBusinessRulesTest extends TestCase
 
     public function test_master_checkout_ignores_unpaid_bill_of_a_room_that_was_already_checked_out(): void
     {
+        $this->room->update(['departure_date' => '2026-08-04']);
         // Booking 10: phòng 207 out trước, sau đó xóa thanh toán -> hóa đơn của 207 chưa thanh toán.
         [$outRoom, $outGuest] = $this->makeCheckedOutRoom();
         $outBill = $this->unpaidBillFor($outRoom, $outGuest);
@@ -230,6 +241,7 @@ class CheckoutBusinessRulesTest extends TestCase
 
     public function test_master_checkout_ignores_debt_of_a_room_that_was_already_checked_out(): void
     {
+        $this->room->update(['departure_date' => '2026-08-04']);
         [$outRoom, $outGuest] = $this->makeCheckedOutRoom();
         Payment::create([
             'booking_id' => $this->booking->id,
@@ -267,6 +279,7 @@ class CheckoutBusinessRulesTest extends TestCase
 
     public function test_master_checkout_is_not_blocked_by_unsettled_company_debt(): void
     {
+        $this->room->update(['departure_date' => '2026-08-04']);
         // Khách yêu cầu: công nợ AC (City ledger...) không liên quan nghiệp vụ checkout;
         // lễ tân giải trừ công nợ sau khi khách thanh toán.
         $debt = Payment::create([
@@ -302,6 +315,7 @@ class CheckoutBusinessRulesTest extends TestCase
 
     public function test_master_checkout_with_company_debt_and_no_settlement_succeeds(): void
     {
+        $this->room->update(['departure_date' => '2026-08-04']);
         // Booking 10: City ledger 7.700.000 chưa có dòng giải trừ nào, gắn master (booking_room_id = null).
         $debt = Payment::create([
             'booking_id' => $this->booking->id,
@@ -326,7 +340,8 @@ class CheckoutBusinessRulesTest extends TestCase
     {
         $this->postJson("/api/booking-rooms/{$this->room->id}/checkout", ['guest_ids' => [$this->guest->id]])
             ->assertStatus(422)
-            ->assertJsonPath('code', 'early_checkout');
+            ->assertJsonPath('code', 'early_checkout')
+            ->assertJsonPath('message', 'Phòng 101 check out sớm 2 ngày, bạn có muốn tính tiền cho những đêm còn lại?');
 
         foreach (['2026-08-04', '2026-08-05'] as $date) {
             ServiceBill::create([

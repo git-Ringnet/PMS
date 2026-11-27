@@ -527,7 +527,7 @@ class GuestController extends Controller
             return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Booking chỉ chứa folio phòng ảo, không hỗ trợ checkout lưu trú.'], 422);
         }
 
-        // Checkout Master chỉ xét công nợ/cọc của toàn Booking, không xét ngày đi từng phòng.
+        // Checkout Master xét công nợ/cọc toàn Booking và chặn nếu còn phòng đang ở chưa đến ngày out.
         $eligibility = $this->validateMasterCheckout($booking, $rooms);
         if ($eligibility) {
             $response = ['success' => false, 'code' => $eligibility['code'], 'message' => $eligibility['message']];
@@ -786,7 +786,8 @@ class GuestController extends Controller
             }
             $unchargedDates = $this->remainingRoomChargeDates($room, $systemDate, $departure->copy()->subDay());
             if (!$skipRemainingRoomCharge && $unchargedDates->isNotEmpty()) {
-                return ['code' => 'early_checkout', 'message' => 'Phòng ' . ($room->room_number ?: $room->id) . ' checkout sớm; cần charge tiền phòng các đêm còn lại trước.', 'data' => ['room_id' => $room->id, 'remaining_from' => $systemDate->toDateString(), 'remaining_to' => $departure->copy()->subDay()->toDateString(), 'remaining_dates' => $unchargedDates->values()]];
+                $earlyDays = $systemDate->diffInDays($departure);
+                return ['code' => 'early_checkout', 'message' => 'Phòng ' . ($room->room_number ?: $room->id) . ' check out sớm ' . $earlyDays . ' ngày, bạn có muốn tính tiền cho những đêm còn lại?', 'data' => ['room_id' => $room->id, 'early_days' => $earlyDays, 'remaining_from' => $systemDate->toDateString(), 'remaining_to' => $departure->copy()->subDay()->toDateString(), 'remaining_dates' => $unchargedDates->values()]];
             }
         }
 
@@ -815,7 +816,7 @@ class GuestController extends Controller
         return null;
     }
 
-    /** Master checkout ignores departure dates but requires every current bill/deposit to be settled. */
+    /** Master checkout requires every current bill/deposit to be settled and no active room to check out early. */
     private function validateMasterCheckout(Booking $booking, $rooms): ?array
     {
         $roomIds = $rooms->pluck('id')->map(fn ($id) => (string) $id)->all();
@@ -869,6 +870,12 @@ class GuestController extends Controller
             ->where(function ($q) { $q->where('pack2', 'DPR')->orWhere('pack4', 'AP'); })
             ->exists();
         if ($unusedDeposit) return ['code' => 'unused_deposit', 'message' => 'Master còn tiền cọc chưa dùng để thanh toán hóa đơn.'];
+
+        $systemDate = app(\App\Services\RoomAvailabilityService::class)->getSystemDate()->startOfDay();
+        $hasEarlyRoom = $rooms->contains(fn (BookingRoom $room) => Carbon::parse($room->departure_date)->startOfDay()->gt($systemDate));
+        if ($hasEarlyRoom) {
+            return ['code' => 'early_checkout_not_allowed', 'message' => 'Không thể check out sớm cho một số phòng'];
+        }
 
         return null;
     }
